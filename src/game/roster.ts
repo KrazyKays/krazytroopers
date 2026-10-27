@@ -2,6 +2,10 @@ import {
   FIRST_NAMES,
   HAIR_COLORS,
   HELMET_COLORS,
+  LEGEND_UPGRADES,
+  LEGION_PICKS,
+  MAX_LEVEL,
+  MAX_UPGRADES,
   NICKNAMES,
   PICK_EVERY_LEVELS,
   PITY_LIMIT,
@@ -10,6 +14,7 @@ import {
   RARITIES,
   RARITY_ORDER,
   SKIN_TONES,
+  TRAINING_PER_SOLDIER,
   UNIFORM_COLORS,
   UPGRADES,
   UPGRADE_CHOICES,
@@ -19,7 +24,7 @@ import {
 import { nextUid } from './state';
 import { computeStats, dps, weaponForSoldier } from './stats';
 import { pick, range, shuffle, weightedPick, type Rng } from './rng';
-import type { GameState, Rarity, Soldier, WeaponDef } from './types';
+import type { GameState, Rarity, Soldier, UpgradeDef, WeaponDef } from './types';
 
 export function rollRarity(rng: Rng, pity: number): Rarity {
   if (pity >= PITY_LIMIT - 1) {
@@ -31,9 +36,11 @@ export function rollRarity(rng: Rng, pity: number): Rarity {
   return weightedPick(rng, RARITY_ORDER.map((r) => [r, RARITIES[r].rate] as const));
 }
 
-export function rollUpgradeChoices(rng: Rng, owned: readonly string[]): string[] {
-  const pool = UPGRADES.filter((u) => !owned.includes(u.id)).map((u) => u.id);
-  return shuffle(rng, pool).slice(0, UPGRADE_CHOICES);
+export function rollUpgradeChoices(rng: Rng, s: Soldier): string[] {
+  const free = (list: UpgradeDef[]) => list.filter((u) => !s.upgrades.includes(u.id)).map((u) => u.id);
+  const legendChoices = s.titles.includes('legende') ? shuffle(rng, free(LEGEND_UPGRADES)).slice(0, UPGRADE_CHOICES) : [];
+  const others = shuffle(rng, free(UPGRADES)).slice(0, UPGRADE_CHOICES - legendChoices.length);
+  return [...legendChoices, ...others];
 }
 
 export function createSoldier(st: GameState, rarity: Rarity, rng: Rng): Soldier {
@@ -55,12 +62,13 @@ export function createSoldier(st: GameState, rarity: Rarity, rng: Rng): Soldier 
     upgrades: [],
     upgradeChoices: null,
     picksLeft: UPGRADE_PICKS,
+    titles: [],
     weaponUid: null,
-    deadUntil: null,
+    trainingsLeft: TRAINING_PER_SOLDIER,
     kills: 0,
     favorite: false,
   };
-  s.upgradeChoices = rollUpgradeChoices(rng, s.upgrades);
+  s.upgradeChoices = rollUpgradeChoices(rng, s);
   return s;
 }
 
@@ -69,13 +77,13 @@ export type RecruitResult = { ok: true; soldiers: Soldier[]; free: boolean } | {
 export function recruit(st: GameState, mode: 'free' | 'one' | 'ten', rng: Rng = Math.random): RecruitResult {
   const count = mode === 'ten' ? 10 : 1;
   if (mode === 'free') {
-    if (!st.freePull) return { ok: false, error: 'Le tirage gratuit du jour a déjà été utilisé.' };
+    if (st.freePulls <= 0) return { ok: false, error: 'Plus de tirage gratuit disponible.' };
+    st.freePulls--;
   } else {
     const cost = mode === 'ten' ? PULL10_COST : PULL_COST;
     if (st.gold < cost) return { ok: false, error: "Pas assez d'or." };
     st.gold -= cost;
   }
-  if (mode === 'free') st.freePull = false;
 
   const soldiers: Soldier[] = [];
   for (let i = 0; i < count; i++) {
@@ -94,15 +102,31 @@ export function pickUpgrade(st: GameState, soldierId: string, upgradeId: string)
   if (!s || s.picksLeft <= 0 || !s.upgradeChoices?.includes(upgradeId)) return false;
   s.upgrades.push(upgradeId);
   s.picksLeft--;
-  s.upgradeChoices = s.picksLeft > 0 ? rollUpgradeChoices(Math.random, s.upgrades) : null;
+  s.upgradeChoices = s.picksLeft > 0 ? rollUpgradeChoices(Math.random, s) : null;
   return true;
 }
 
 export function grantLevelPicks(s: Soldier, fromLevel: number): void {
   const milestones = Math.floor(s.level / PICK_EVERY_LEVELS) - Math.floor(fromLevel / PICK_EVERY_LEVELS);
-  if (milestones <= 0) return;
-  s.picksLeft += milestones;
-  if (!s.upgradeChoices) s.upgradeChoices = rollUpgradeChoices(Math.random, s.upgrades);
+  const room = MAX_UPGRADES - s.upgrades.length - s.picksLeft;
+  const gained = Math.min(milestones, room);
+  if (gained <= 0) return;
+  s.picksLeft += gained;
+  if (!s.upgradeChoices) s.upgradeChoices = rollUpgradeChoices(Math.random, s);
+}
+
+export function legionOfHonor(st: GameState, soldierId: string, removed: readonly string[]): boolean {
+  const s = st.soldiers.find((x) => x.id === soldierId);
+  if (!s || s.level < MAX_LEVEL || s.picksLeft > 0) return false;
+  if (removed.some((id) => !s.upgrades.includes(id))) return false;
+  s.upgrades = s.upgrades.filter((id) => !removed.includes(id));
+  s.level = 1;
+  s.xp = 0;
+  s.picksLeft = Math.min(LEGION_PICKS, MAX_UPGRADES - s.upgrades.length);
+  s.upgradeChoices = s.picksLeft > 0 ? rollUpgradeChoices(Math.random, s) : null;
+  s.trainingsLeft += TRAINING_PER_SOLDIER;
+  if (!s.titles.includes('legion')) s.titles.push('legion');
+  return true;
 }
 
 export function equipWeapon(st: GameState, soldierId: string, weaponUid: string | null): void {

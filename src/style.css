@@ -96,10 +96,6 @@ h3 {
   font-size: 1.05rem;
 }
 
-.timer {
-  font-variant-numeric: tabular-nums;
-}
-
 .tabs {
   display: flex;
   overflow-x: auto;
@@ -303,11 +299,6 @@ h3 {
   outline: 3px solid var(--good);
 }
 
-.card.dead {
-  opacity: 0.5;
-  filter: grayscale(0.8);
-}
-
 .card-portrait {
   flex: 0 0 64px;
   display: flex;
@@ -377,12 +368,6 @@ h3 {
   background: #5a4a14;
   border-color: var(--accent);
   color: #ffe9a0;
-}
-
-.pill-dead {
-  background: #4a1e1a;
-  border-color: var(--bad);
-  color: #ffb7ab;
 }
 
 /* ---------- Modal ---------- */
@@ -516,6 +501,62 @@ h3 {
 
 .choice b {
   color: var(--accent);
+}
+
+.choice-legend {
+  background: #4a2f0c;
+  border-color: #ffb02e;
+  box-shadow: 0 0 10px rgba(255, 176, 46, 0.35);
+}
+
+.choice-legend b {
+  color: #ffd46b;
+}
+
+.choice-legend:hover {
+  background: #5e3c12;
+}
+
+.title-tag {
+  margin-left: 0.4rem;
+  padding: 0 0.4rem;
+  border-radius: 0.3rem;
+  border: 1px solid #ffb02e;
+  background: #3a2e0c;
+  color: #ffd46b;
+  font-size: 0.74rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.title-legion {
+  border-color: #b46cff;
+  background: #2d1f44;
+  color: #e3c8ff;
+}
+
+.legion-block {
+  padding: 0.8rem;
+  border: 1px dashed #ffb02e;
+  border-radius: 8px;
+}
+
+.legion-options {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0.6rem 0;
+}
+
+.legion-option {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.legion-option input {
+  margin-top: 0.2rem;
 }
 
 .choice span {

@@ -1,5 +1,6 @@
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 export type Team = 'ally' | 'enemy';
+export type TitleId = 'legende' | 'legion';
 
 export interface Appearance {
   skin: number;
@@ -21,8 +22,9 @@ export interface Soldier {
   upgrades: string[];
   upgradeChoices: string[] | null;
   picksLeft: number;
+  titles: TitleId[];
   weaponUid: string | null;
-  deadUntil: number | null;
+  trainingsLeft: number;
   kills: number;
   favorite: boolean;
 }
@@ -43,9 +45,7 @@ export interface GameState {
   soldiers: Soldier[];
   weapons: WeaponItem[];
   campaignLevel: number;
-  dayKey: string;
-  trainingLeft: number;
-  freePull: boolean;
+  freePulls: number;
   nextId: number;
   stats: { won: number; lost: number; deaths: number };
   battleSpeed: BattleSpeed;

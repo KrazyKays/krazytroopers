@@ -1,15 +1,23 @@
-import type { Mods, Rarity, UpgradeDef, WeaponDef } from './types';
+import type { Mods, Rarity, TitleId, UpgradeDef, WeaponDef } from './types';
 
 export const SQUAD_MAX = 5;
-export const TRAINING_PER_DAY = 3;
+export const TRAINING_PER_SOLDIER = 3;
 export const PULL_COST = 100;
 export const PULL10_COST = 900;
 export const PITY_LIMIT = 20;
-export const START_GOLD = 500;
+export const START_GOLD = 200;
+export const START_FREE_PULLS = 5;
 export const MAX_LEVEL = 30;
 export const UPGRADE_PICKS = 3;
 export const UPGRADE_CHOICES = 3;
 export const PICK_EVERY_LEVELS = 5;
+export const MAX_UPGRADES = 10;
+export const LEGION_PICKS = 1;
+
+export const TITLES: Record<TitleId, { label: string; desc: string }> = {
+  legende: { label: 'Légende', desc: 'Atteint le niveau maximum' },
+  legion: { label: "Légion d'honneur", desc: "Décoré de la Légion d'honneur" },
+};
 
 export interface RarityInfo {
   label: string;
@@ -70,7 +78,22 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'studious', name: 'Élève brillant', desc: '+30 % d’XP gagnée', mods: { xpPct: 0.3 } },
 ];
 
-export const UPGRADES_BY_ID: Record<string, UpgradeDef> = Object.fromEntries(UPGRADES.map((u) => [u.id, u]));
+export const LEGEND_UPGRADES: UpgradeDef[] = [
+  { id: 'vitality+', name: 'Constitution d’acier', desc: '+50 % PV', mods: { hpPct: 0.5 } },
+  { id: 'power+', name: 'Force titanesque', desc: '+40 % dégâts', mods: { dmgPct: 0.4 } },
+  { id: 'sprint+', name: 'Foulées du vent', desc: '+40 % vitesse de déplacement', mods: { speedPct: 0.4 } },
+  { id: 'plating+', name: 'Blindage lourd', desc: '+40 armure (réduit les dégâts reçus)', mods: { armor: 40 } },
+  { id: 'eagle+', name: 'Regard de faucon', desc: '+35 % de chances de coup critique (x2 dégâts)', mods: { crit: 0.35 } },
+  { id: 'vampire+', name: 'Sang de vampire', desc: 'Soigne 30 % des dégâts infligés', mods: { lifesteal: 0.3 } },
+  { id: 'regen+', name: 'Régénération divine', desc: 'Régénère 4 % des PV par seconde', mods: { regenPct: 0.04 } },
+  { id: 'ghost+', name: 'Spectre', desc: '+30 % de chances d’esquive', mods: { dodge: 0.3 } },
+  { id: 'scope+', name: 'Œil de l’aigle', desc: '+60 % de portée', mods: { rangePct: 0.6 } },
+  { id: 'rapid+', name: 'Mains de feu', desc: '-45 % de temps de recharge', mods: { cdPct: -0.45 } },
+  { id: 'blast+', name: 'Ogives dévastatrices', desc: 'Dégâts de zone (rayon +60)', mods: { aoe: 60 } },
+  { id: 'studious+', name: 'Maître d’armes', desc: '+60 % d’XP gagnée', mods: { xpPct: 0.6 } },
+];
+
+export const UPGRADES_BY_ID: Record<string, UpgradeDef> = Object.fromEntries([...UPGRADES, ...LEGEND_UPGRADES].map((u) => [u.id, u]));
 
 export const EMPTY_MODS: Mods = {
   hpPct: 0,

@@ -1,9 +1,9 @@
-﻿import { SQUAD_MAX, TRAINING_PER_DAY } from '../game/data';
+﻿import { SQUAD_MAX, TRAINING_PER_SOLDIER } from '../game/data';
 import { campaignGold, campaignXp, launchBattle, trainingXp, TRAINING_GOLD } from '../game/combat';
 import { previewCampaign } from '../game/enemies';
 import { sortSquad } from '../game/roster';
-import { getState, isAvailable, mutate, refresh } from '../game/state';
-import type { GameState } from '../game/types';
+import { getState, mutate, refresh } from '../game/state';
+import type { GameState, Soldier } from '../game/types';
 import { h } from './dom';
 import { openBattle } from './battleView';
 import { fmt, getSquadSort, soldierCard, sortBar, toast } from './components';
@@ -14,9 +14,13 @@ let mode: Mode = 'training';
 const selected = new Set<string>();
 let campaignPick: number | null = null;
 
+function eligible(s: Soldier): boolean {
+  return mode === 'campaign' || s.trainingsLeft > 0;
+}
+
 function autoSelect(st: GameState): void {
   selected.clear();
-  const ready = st.soldiers.filter((s) => isAvailable(s));
+  const ready = st.soldiers.filter(eligible);
   for (const s of sortSquad(st, getSquadSort(), ready).slice(0, SQUAD_MAX)) selected.add(s.id);
 }
 
@@ -41,7 +45,7 @@ export function renderCombat(): HTMLElement {
   const st = getState();
   for (const id of [...selected]) {
     const s = st.soldiers.find((x) => x.id === id);
-    if (!s || !isAvailable(s)) selected.delete(id);
+    if (!s || !eligible(s)) selected.delete(id);
   }
   const nextLevel = st.campaignLevel + 1;
   const level = Math.min(campaignPick ?? nextLevel, nextLevel);
@@ -49,7 +53,7 @@ export function renderCombat(): HTMLElement {
   const tabs = h(
     'div',
     { class: 'subtabs' },
-    h('button', { class: `subtab${mode === 'training' ? ' active' : ''}`, onclick: () => { mode = 'training'; refresh(); } }, `Entraînement (${st.trainingLeft}/${TRAINING_PER_DAY})`),
+    h('button', { class: `subtab${mode === 'training' ? ' active' : ''}`, onclick: () => { mode = 'training'; refresh(); } }, 'Entraînement'),
     h('button', { class: `subtab${mode === 'campaign' ? ' active' : ''}`, onclick: () => { mode = 'campaign'; refresh(); } }, `Campagne (niveau ${nextLevel})`),
   );
 
@@ -61,7 +65,7 @@ export function renderCombat(): HTMLElement {
       { class: 'panel' },
       h('h3', null, "Combat d'entraînement"),
       h('p', null, `Affrontez des cibles adaptées au niveau de votre escouade pour gagner de l'expérience (environ ${fmt(trainingXp(avg))} XP par survivant, ${TRAINING_GOLD} or en cas de victoire).`),
-      h('p', { class: 'muted small' }, `Vous disposez de ${TRAINING_PER_DAY} entraînements par jour. Un soldat vaincu est indisponible jusqu'au lendemain.`),
+      h('p', { class: 'muted small' }, `Chaque soldat peut participer à ${TRAINING_PER_SOLDIER} entraînements dans sa vie. Un soldat vaincu meurt définitivement.`),
     );
   } else {
     const prev = previewCampaign(level);
@@ -84,13 +88,13 @@ export function renderCombat(): HTMLElement {
           ? `Niveau déjà terminé : récompenses réduites (${fmt(campaignXp(level) / 2)} XP, ${fmt(campaignGold(level, false))} or, arme possible).`
           : `Récompenses : ${fmt(campaignXp(level))} XP par survivant, ${fmt(campaignGold(level, true))} or et une arme garantie.`,
       ),
-      h('p', { class: 'muted small' }, 'En cas de défaite, les soldats survivants gagnent un peu d’XP ; les soldats tombés sont indisponibles jusqu’au lendemain.'),
+      h('p', { class: 'muted small' }, 'En cas de défaite, les soldats survivants gagnent un peu d’XP ; les soldats tombés meurent définitivement.'),
     );
   }
 
-  const ready = st.soldiers.filter((s) => isAvailable(s)).length;
-  const unarmed = [...selected].map((id) => st.soldiers.find((s) => s.id === id)).filter((s) => s && !s.weaponUid);
-  const canLaunch = selected.size >= 1 && (mode === 'campaign' || st.trainingLeft > 0);
+  const picked = st.soldiers.filter((s) => selected.has(s.id));
+  const unarmed = picked.filter((s) => !s.weaponUid);
+  const canLaunch = selected.size >= 1;
 
   const squadPanel = h(
     'div',
@@ -115,33 +119,31 @@ export function renderCombat(): HTMLElement {
           h(
             'div',
             { class: 'grid' },
-            sortSquad(st, getSquadSort())
-              .sort((a, b) => Number(isAvailable(b)) - Number(isAvailable(a)))
-              .map((s) =>
-                soldierCard(st, s, {
-                  selected: selected.has(s.id),
-                  onclick: () => {
-                    if (!isAvailable(s)) {
-                      toast(`${s.name} est hors de combat jusqu'à demain.`, 'bad');
-                      return;
-                    }
-                    if (selected.has(s.id)) selected.delete(s.id);
-                    else if (selected.size >= SQUAD_MAX) toast(`Maximum ${SQUAD_MAX} soldats par combat.`, 'bad');
-                    else selected.add(s.id);
-                    refresh();
-                  },
-                }),
-              ),
+            sortSquad(st, getSquadSort()).map((s) =>
+              soldierCard(st, s, {
+                selected: selected.has(s.id),
+                onclick: () => {
+                  if (!eligible(s)) {
+                    toast(`${s.name} n'a plus d'entraînement disponible.`, 'bad');
+                    return;
+                  }
+                  if (selected.has(s.id)) selected.delete(s.id);
+                  else if (selected.size >= SQUAD_MAX) toast(`Maximum ${SQUAD_MAX} soldats par combat.`, 'bad');
+                  else selected.add(s.id);
+                  refresh();
+                },
+              }),
+            ),
           ),
         ),
-    unarmed.length > 0 && h('p', { class: 'warn' }, `Attention : ${unarmed.map((s) => s!.name).join(', ')} ${unarmed.length > 1 ? 'combattent' : 'combat'} à mains nues. Équipez une arme depuis l'onglet Escouade.`),
-    ready === 0 && st.soldiers.length > 0 && h('p', { class: 'warn' }, "Tous vos soldats sont hors de combat : ils reviendront demain. En attendant, vous pouvez recruter."),
+    unarmed.length > 0 && h('p', { class: 'warn' }, `Attention : ${unarmed.map((s) => s.name).join(', ')} ${unarmed.length > 1 ? 'combattent' : 'combat'} à mains nues. Équipez une arme depuis l'onglet Escouade.`),
+    mode === 'training' && st.soldiers.length > 0 && st.soldiers.every((s) => s.trainingsLeft <= 0) && h('p', { class: 'warn' }, 'Tous vos soldats ont épuisé leurs entraînements. Ils peuvent encore partir en campagne.'),
   );
 
   const launchBtn = h(
     'button',
     { class: 'btn btn-big btn-gold', disabled: !canLaunch, onclick: launch },
-    mode === 'training' ? (st.trainingLeft > 0 ? "Lancer l'entraînement" : "Plus d'entraînement aujourd'hui") : `Lancer le niveau ${level}`,
+    mode === 'training' ? "Lancer l'entraînement" : `Lancer le niveau ${level}`,
   );
 
   return h('section', null, h('h2', null, 'Combat'), tabs, info, squadPanel, h('div', { class: 'launch-bar' }, launchBtn));

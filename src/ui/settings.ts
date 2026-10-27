@@ -1,4 +1,4 @@
-import { PICK_EVERY_LEVELS, PITY_LIMIT, PULL_COST, SQUAD_MAX, TRAINING_PER_DAY, UPGRADE_PICKS } from '../game/data';
+import { MAX_LEVEL, MAX_UPGRADES, PICK_EVERY_LEVELS, PITY_LIMIT, PULL_COST, SQUAD_MAX, START_FREE_PULLS, TRAINING_PER_SOLDIER, UPGRADE_PICKS } from '../game/data';
 import { getState, mutate, parseSave, replaceState, resetState, serializeState } from '../game/state';
 import { BATTLE_SPEEDS } from '../game/types';
 import { h } from './dom';
@@ -42,11 +42,12 @@ export function renderSettings(): HTMLElement {
       h(
         'ul',
         { class: 'rules' },
-        h('li', null, h('b', null, 'Recruter : '), `tirez des soldats au hasard (${PULL_COST} or, ou 1 tirage gratuit par jour). Un soldat Épique ou mieux est garanti tous les ${PITY_LIMIT} tirages.`),
-        h('li', null, h('b', null, 'Améliorer : '), `chaque recrue propose ${UPGRADE_PICKS} fois de suite 3 améliorations, puis une nouvelle fois tous les ${PICK_EVERY_LEVELS} niveaux : à vous d'en choisir une à chaque fois.`),
-        h('li', null, h('b', null, "S'entraîner : "), `${TRAINING_PER_DAY} combats d'entraînement par jour pour gagner de l'expérience.`),
+        h('li', null, h('b', null, 'Recruter : '), `tirez des soldats au hasard (${PULL_COST} or). Chaque nouveau joueur commence avec ${START_FREE_PULLS} tirages gratuits. Un soldat Épique ou mieux est garanti tous les ${PITY_LIMIT} tirages.`),
+        h('li', null, h('b', null, 'Améliorer : '), `chaque recrue propose ${UPGRADE_PICKS} fois de suite 3 améliorations, puis une nouvelle fois tous les ${PICK_EVERY_LEVELS} niveaux, dans la limite de ${MAX_UPGRADES} améliorations : à vous d'en choisir une à chaque fois.`),
+        h('li', null, h('b', null, "Légion d'honneur : "), `au niveau ${MAX_LEVEL}, un soldat devient Légende. Vous pouvez alors le décorer : retirez les améliorations de votre choix, il redescend au niveau 1, propose des améliorations de Légende, bien meilleures, et gagne ${TRAINING_PER_SOLDIER} nouveaux entraînements.`),
+        h('li', null, h('b', null, "S'entraîner : "), `chaque soldat peut participer à ${TRAINING_PER_SOLDIER} combats d'entraînement dans sa vie pour gagner de l'expérience.`),
         h('li', null, h('b', null, 'Campagne : '), `engagez jusqu'à ${SQUAD_MAX} soldats niveau après niveau face à toujours plus d'ennemis. Récompenses : armes, XP et or. Un boss vous attend tous les 5 niveaux.`),
-        h('li', null, h('b', null, 'Danger : '), "un soldat qui meurt dans un combat (entraînement ou campagne) est indisponible jusqu'au lendemain (minuit, heure locale)."),
+        h('li', null, h('b', null, 'Danger : '), "un soldat qui meurt dans un combat (entraînement ou campagne) est mort définitivement : il quitte l'escouade."),
         h('li', null, h('b', null, 'Équiper : '), "donnez à chaque soldat l'arme qui lui convient ; les armes à zone ou à longue portée changent tout."),
       ),
     ),

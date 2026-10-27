@@ -1,5 +1,4 @@
-﻿import { START_GOLD, START_WEAPONS, TRAINING_PER_DAY } from './data';
-import { dayKey, now } from './clock';
+﻿import { MAX_LEVEL, START_FREE_PULLS, START_GOLD, START_WEAPONS, TRAINING_PER_SOLDIER } from './data';
 import type { GameState, Soldier } from './types';
 
 const SAVE_KEY = 'krazy-troopers-save-v1';
@@ -13,38 +12,13 @@ export function createInitialState(): GameState {
     soldiers: [],
     weapons: [],
     campaignLevel: 0,
-    dayKey: dayKey(),
-    trainingLeft: TRAINING_PER_DAY,
-    freePull: true,
+    freePulls: START_FREE_PULLS,
     nextId: 1,
     stats: { won: 0, lost: 0, deaths: 0 },
     battleSpeed: 1,
   };
   for (const defId of START_WEAPONS) st.weapons.push({ uid: `w${st.nextId++}`, defId });
   return st;
-}
-
-export function isAvailable(s: Soldier, t: number = now()): boolean {
-  return s.deadUntil === null || t >= s.deadUntil;
-}
-
-/** Nouveau jour : entraînements, tirage gratuit, et retour des soldats tombés. Renvoie true si l'état a changé. */
-export function ensureDay(st: GameState, t: number = now()): boolean {
-  let changed = false;
-  const key = dayKey(t);
-  if (st.dayKey !== key) {
-    st.dayKey = key;
-    st.trainingLeft = TRAINING_PER_DAY;
-    st.freePull = true;
-    changed = true;
-  }
-  for (const s of st.soldiers) {
-    if (s.deadUntil !== null && t >= s.deadUntil) {
-      s.deadUntil = null;
-      changed = true;
-    }
-  }
-  return changed;
 }
 
 function isValidState(x: unknown): x is GameState {
@@ -64,7 +38,17 @@ export function parseSave(raw: string): GameState | null {
   try {
     const data = JSON.parse(raw);
     return isValidState(data)
-      ? { ...data, battleSpeed: data.battleSpeed ?? 1, soldiers: data.soldiers.map((s: Soldier) => ({ ...s, favorite: !!s.favorite })) }
+      ? {
+          ...data,
+          battleSpeed: data.battleSpeed ?? 1,
+          freePulls: typeof data.freePulls === 'number' ? data.freePulls : 0,
+          soldiers: data.soldiers.map((s: Soldier) => ({
+            ...s,
+            favorite: !!s.favorite,
+            titles: s.titles ?? (s.level >= MAX_LEVEL ? ['legende'] : []),
+            trainingsLeft: s.trainingsLeft ?? TRAINING_PER_SOLDIER,
+          })),
+        }
       : null;
   } catch {
     return null;
@@ -82,12 +66,10 @@ export function loadState(): void {
   const raw = localStorage.getItem(SAVE_KEY);
   const loaded = raw ? parseSave(raw) : null;
   state = loaded ?? createInitialState();
-  ensureDay(state);
 }
 
 export function replaceState(next: GameState): void {
   state = next;
-  ensureDay(state);
   commit();
 }
 

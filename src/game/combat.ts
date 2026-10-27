@@ -1,11 +1,10 @@
-import { now, nextMidnight } from './clock';
 import { simulate, type BattleResult, type BattleUnit } from './battle';
 import { SQUAD_MAX } from './data';
 import { buildCampaignEnemies, buildTrainingEnemies, isBossLevel } from './enemies';
 import { soldierLook } from './look';
 import { grantLevelPicks, rollWeaponDrop } from './roster';
 import { aggregateMods, addXp, computeStats, weaponForSoldier } from './stats';
-import { isAvailable, nextUid } from './state';
+import { nextUid } from './state';
 import { mulberry32, randomSeed } from './rng';
 import type { GameState, Soldier, WeaponDef } from './types';
 
@@ -56,13 +55,12 @@ export function campaignGold(level: number, firstClear: boolean): number {
 export const TRAINING_GOLD = 12;
 
 export function launchBattle(st: GameState, req: BattleRequest, seed: number = randomSeed()): BattleLaunch {
-  const t = now();
   if (req.squad.length < 1 || req.squad.length > SQUAD_MAX) return { ok: false, error: `Choisissez entre 1 et ${SQUAD_MAX} soldats.` };
   const squad: Soldier[] = [];
   for (const id of req.squad) {
     const s = st.soldiers.find((x) => x.id === id);
     if (!s) return { ok: false, error: 'Soldat introuvable.' };
-    if (!isAvailable(s, t)) return { ok: false, error: `${s.name} est hors de combat jusqu'à demain.` };
+    if (req.mode === 'training' && s.trainingsLeft <= 0) return { ok: false, error: `${s.name} n'a plus d'entraînement disponible.` };
     if (squad.includes(s)) return { ok: false, error: 'Soldat en double.' };
     squad.push(s);
   }
@@ -70,7 +68,6 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   const isCampaign = req.mode === 'campaign';
   const level = isCampaign ? req.level : null;
   if (isCampaign && (req.level < 1 || req.level > st.campaignLevel + 1)) return { ok: false, error: "Ce niveau n'est pas débloqué." };
-  if (!isCampaign && st.trainingLeft <= 0) return { ok: false, error: "Plus d'entraînement disponible aujourd'hui." };
 
   const allies: BattleUnit[] = squad.map((s) => {
     const weapon = weaponForSoldier(s, st.weapons);
@@ -95,12 +92,11 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
     const kills = result.kills[s.id] ?? 0;
     const { dealt, taken, healed } = result.totals[s.id];
     s.kills += kills;
-    if (died) {
-      s.deadUntil = nextMidnight(t);
-      st.stats.deaths++;
-    }
+    if (!isCampaign) s.trainingsLeft--;
+    if (died) st.stats.deaths++;
     return { id: s.id, name: s.name, xpGained: gained, levelsGained, newLevel: s.level, died, kills, dealt, taken, healed };
   });
+  st.soldiers = st.soldiers.filter((s) => !result.deadIds.includes(s.id));
 
   let gold = 0;
   let weapon: WeaponDef | null = null;
@@ -120,7 +116,6 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   } else {
     st.stats.lost++;
   }
-  if (!isCampaign) st.trainingLeft--;
 
   return {
     ok: true,

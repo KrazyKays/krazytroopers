@@ -66,6 +66,9 @@ export function addXp(s: Soldier, amount: number): number {
     s.level++;
     gained++;
   }
-  if (s.level >= MAX_LEVEL) s.xp = 0;
+  if (s.level >= MAX_LEVEL) {
+    s.xp = 0;
+    if (!s.titles.includes('legende')) s.titles.push('legende');
+  }
   return gained;
 }

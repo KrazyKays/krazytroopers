@@ -1,10 +1,12 @@
-import { MAX_LEVEL, PICK_EVERY_LEVELS, RARITIES, RARITY_ORDER, UPGRADES_BY_ID, WEAPONS_BY_ID, SQUAD_MAX } from '../game/data';
-import { equipWeapon, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, renameSoldier, sortSquad, toggleFavorite } from '../game/roster';
+import { LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PICK_EVERY_LEVELS, RARITIES, RARITY_ORDER, UPGRADES_BY_ID, WEAPONS_BY_ID, SQUAD_MAX } from '../game/data';
+import { equipWeapon, legionOfHonor, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, renameSoldier, sortSquad, toggleFavorite } from '../game/roster';
 import { getState, mutate } from '../game/state';
 import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
 import type { Soldier } from '../game/types';
 import { h } from './dom';
-import { fmt, getSquadSort, openModal, rarityTag, sortBar, soldierCard, soldierSprite, toast, weaponIcon, xpBar } from './components';
+import { fmt, getSquadSort, openModal, rarityTag, sortBar, soldierCard, soldierSprite, titleTags, toast, weaponIcon, xpBar } from './components';
+
+const legendIds = new Set(LEGEND_UPGRADES.map((u) => u.id));
 
 export function renderRoster(): HTMLElement {
   const st = getState();
@@ -21,7 +23,7 @@ export function renderRoster(): HTMLElement {
     'section',
     null,
     h('div', { class: 'section-head' }, h('h2', null, `Escouade (${st.soldiers.length})`), pending > 0 && h('span', { class: 'pill pill-pick' }, `${pending} amélioration${pending > 1 ? 's' : ''} en attente`)),
-    h('p', { class: 'muted' }, `Cliquez sur un soldat pour choisir ses améliorations et gérer son équipement. Une nouvelle amélioration est débloquée tous les ${PICK_EVERY_LEVELS} niveaux. Vous pouvez engager ${SQUAD_MAX} soldats par combat.`),
+    h('p', { class: 'muted' }, `Cliquez sur un soldat pour choisir ses améliorations et gérer son équipement. Une nouvelle amélioration est débloquée tous les ${PICK_EVERY_LEVELS} niveaux, dans la limite de ${MAX_UPGRADES}. Vous pouvez engager ${SQUAD_MAX} soldats par combat.`),
     sortBar(),
     h('div', { class: 'grid' }, sortSquad(st, getSquadSort()).map((s) => soldierCard(st, s, { onclick: () => openSoldier(s.id) }))),
   );
@@ -47,7 +49,55 @@ function renameForm(s: Soldier): HTMLElement {
   );
 }
 
+function legionBlock(s: Soldier, removed: Set<string>): HTMLElement {
+  return h(
+    'div',
+    { class: 'upgrade-block legion-block' },
+    h('h3', null, "Légion d'honneur"),
+    h(
+      'p',
+      { class: 'muted small' },
+      `Cochez les améliorations à retirer. ${s.name} redescend au niveau 1 et propose de nouveau des améliorations de Légende.`,
+    ),
+    h(
+      'div',
+      { class: 'legion-options' },
+      s.upgrades.map((uid) =>
+        h(
+          'label',
+          { class: 'legion-option' },
+          h('input', {
+            type: 'checkbox',
+            checked: removed.has(uid),
+            onchange: (e) => {
+              if ((e.target as HTMLInputElement).checked) removed.add(uid);
+              else removed.delete(uid);
+            },
+          }),
+          h('span', null, h('b', null, UPGRADES_BY_ID[uid].name), ` — ${UPGRADES_BY_ID[uid].desc}`),
+        ),
+      ),
+    ),
+    h(
+      'button',
+      {
+        class: 'btn btn-gold',
+        onclick: () => {
+          const toRemove = [...removed];
+          const detail = toRemove.length ? `retirer ${toRemove.length} amélioration${toRemove.length > 1 ? 's' : ''} et ` : '';
+          if (!confirm(`Accorder la Légion d'honneur à ${s.name} : ${detail}le ramener au niveau 1 ?`)) return;
+          if (!mutate((st) => legionOfHonor(st, s.id, toRemove))) return;
+          removed.clear();
+          toast(`${s.name} reçoit la Légion d'honneur.`, 'good');
+        },
+      },
+      "Accorder la Légion d'honneur",
+    ),
+  );
+}
+
 export function openSoldier(id: string): void {
+  const legionRemoved = new Set<string>();
   openModal((close) => {
     const st = getState();
     const s = st.soldiers.find((x) => x.id === id);
@@ -67,7 +117,7 @@ export function openSoldier(id: string): void {
         'div',
         null,
         renameForm(s),
-        h('div', null, rarityTag(s.rarity), ` · Niveau ${s.level}${s.level >= MAX_LEVEL ? ' (max)' : ''}`),
+        h('div', null, rarityTag(s.rarity), ` · Niveau ${s.level}${s.level >= MAX_LEVEL ? ' (max)' : ''}`, titleTags(s)),
         xpBar(s),
         s.level < MAX_LEVEL && h('div', { class: 'muted small' }, `${fmt(s.xp)} / ${fmt(xpForNext(s.level))} XP`),
         h('div', { class: 'muted small' }, `${s.kills} ennemi${s.kills > 1 ? 's' : ''} éliminé${s.kills > 1 ? 's' : ''}`),
@@ -102,7 +152,7 @@ export function openSoldier(id: string): void {
             return h(
               'button',
               {
-                class: 'choice',
+                class: `choice${legendIds.has(uid) ? ' choice-legend' : ''}`,
                 onclick: () => {
                   mutate((state) => pickUpgrade(state, s.id, uid));
                 },
@@ -156,6 +206,8 @@ export function openSoldier(id: string): void {
       ),
     );
 
+    const legion = s.level >= MAX_LEVEL && s.picksLeft === 0 ? legionBlock(s, legionRemoved) : null;
+
     return h(
       'div',
       { class: 'detail' },
@@ -163,6 +215,7 @@ export function openSoldier(id: string): void {
       header,
       statsBlock,
       upgrades,
+      legion,
       h('div', { class: 'upgrade-block' }, h('h3', null, `Arme : ${weapon.name}`), weaponList),
       h(
         'div',

@@ -1,23 +1,20 @@
-import { RARITIES, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
-import { isAvailable, refresh } from '../game/state';
+import { MAX_LEVEL, RARITIES, TITLES, TRAINING_PER_SOLDIER, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
+import { refresh } from '../game/state';
 import { soldierLook } from '../game/look';
 import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
 import { SQUAD_SORTS, type SquadSort } from '../game/roster';
-import { MAX_LEVEL } from '../game/data';
 import type { GameState, Soldier, WeaponDef } from '../game/types';
 import { spriteSvg, weaponSvg } from './avatar';
 import { h, html } from './dom';
-
-export function formatDuration(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1000));
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${pad(Math.floor(total / 3600))}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
-}
 
 export const fmt = (n: number, digits = 0): string => n.toLocaleString('fr-FR', { maximumFractionDigits: digits, minimumFractionDigits: digits });
 
 export function rarityTag(rarity: keyof typeof RARITIES): HTMLElement {
   return h('span', { class: 'rarity-tag', style: `color:${RARITIES[rarity].color}` }, RARITIES[rarity].label);
+}
+
+export function titleTags(s: Soldier): HTMLElement[] {
+  return s.titles.map((t) => h('span', { class: `title-tag title-${t}`, title: TITLES[t].desc }, TITLES[t].label));
 }
 
 export function soldierSprite(st: GameState, s: Soldier, cls = 'sprite'): HTMLElement {
@@ -39,7 +36,6 @@ export function xpBar(s: Soldier): HTMLElement {
 }
 
 export function statusPill(s: Soldier, weapon: WeaponDef): HTMLElement {
-  if (!isAvailable(s)) return h('span', { class: 'pill pill-dead' }, 'Hors de combat jusqu’à demain');
   if (s.picksLeft > 0) return h('span', { class: 'pill pill-pick' }, `${s.picksLeft} amélioration${s.picksLeft > 1 ? 's' : ''} à choisir`);
   return h('span', { class: 'pill' }, weapon.name);
 }
@@ -47,11 +43,10 @@ export function statusPill(s: Soldier, weapon: WeaponDef): HTMLElement {
 export function soldierCard(st: GameState, s: Soldier, opts: { onclick?: () => void; selected?: boolean; disabled?: boolean } = {}): HTMLElement {
   const weapon = weaponForSoldier(s, st.weapons);
   const stats = computeStats(s, weapon);
-  const dead = !isAvailable(s);
   return h(
     'div',
     {
-      class: `card rarity-${s.rarity}${opts.selected ? ' selected' : ''}${dead ? ' dead' : ''}${opts.onclick ? ' clickable' : ''}`,
+      class: `card rarity-${s.rarity}${opts.selected ? ' selected' : ''}${opts.onclick ? ' clickable' : ''}`,
       style: `--rc:${RARITIES[s.rarity].color}`,
       onclick: opts.onclick ? () => opts.onclick!() : undefined,
     },
@@ -60,9 +55,9 @@ export function soldierCard(st: GameState, s: Soldier, opts: { onclick?: () => v
       'div',
       { class: 'card-body' },
       h('div', { class: 'card-name' }, s.favorite && h('span', { class: 'fav-star', title: 'Favori' }, '★ '), s.name),
-      h('div', { class: 'card-sub' }, rarityTag(s.rarity), ` · Niv. ${s.level}`),
+      h('div', { class: 'card-sub' }, rarityTag(s.rarity), ` · Niv. ${s.level}`, titleTags(s)),
       xpBar(s),
-      h('div', { class: 'card-stats' }, `PV ${fmt(stats.maxHp)} · DPS ${fmt(dps(stats), 1)}`),
+      h('div', { class: 'card-stats' }, `PV ${fmt(stats.maxHp)} · DPS ${fmt(dps(stats), 1)} · Entraînements ${s.trainingsLeft}/${TRAINING_PER_SOLDIER}`),
       statusPill(s, weapon),
     ),
   );

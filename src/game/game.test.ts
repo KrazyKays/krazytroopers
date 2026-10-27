@@ -1,17 +1,14 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { simulate } from './battle';
-import { setNow, nextMidnight } from './clock';
 import { launchBattle } from './combat';
-import { PITY_LIMIT, PULL_COST, TRAINING_PER_DAY, UPGRADE_CHOICES, UPGRADE_PICKS, WEAPONS_BY_ID } from './data';
+import { LEGEND_UPGRADES, LEGION_PICKS, MAX_LEVEL, MAX_UPGRADES, PITY_LIMIT, PULL_COST, START_FREE_PULLS, START_GOLD, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADE_PICKS, UPGRADES, WEAPONS_BY_ID } from './data';
 import { buildCampaignEnemies } from './enemies';
 import { mulberry32 } from './rng';
-import { createSoldier, equipWeapon, grantLevelPicks, pickUpgrade, recruit, releaseSoldier, sellWeapon, sortSquad, toggleFavorite } from './roster';
-import { createInitialState, ensureDay, isAvailable } from './state';
-import { computeStats } from './stats';
+import { createSoldier, equipWeapon, grantLevelPicks, legionOfHonor, pickUpgrade, recruit, releaseSoldier, sellWeapon, sortSquad, toggleFavorite } from './roster';
+import { createInitialState } from './state';
+import { addXp, computeStats } from './stats';
 import { soldierLook } from './look';
-import type { GameState, Soldier } from './types';
-
-afterEach(() => setNow(null));
+import type { GameState } from './types';
 
 function stateWithSoldiers(n: number, level = 1): GameState {
   const st = createInitialState();
@@ -57,14 +54,14 @@ describe('recrutement', () => {
     expect(recruit(st, 'one').ok).toBe(false);
   });
 
-  it('limite le tirage gratuit à un par jour', () => {
+  it('accorde des tirages gratuits à un nouveau joueur, sans les renouveler', () => {
     const st = createInitialState();
-    expect(recruit(st, 'free').ok).toBe(true);
+    expect(st.gold).toBe(START_GOLD);
+    expect(st.freePulls).toBe(START_FREE_PULLS);
+    for (let i = 0; i < START_FREE_PULLS; i++) expect(recruit(st, 'free').ok).toBe(true);
     expect(recruit(st, 'free').ok).toBe(false);
-    expect(st.soldiers).toHaveLength(1);
-    st.dayKey = 'hier';
-    ensureDay(st);
-    expect(recruit(st, 'free').ok).toBe(true);
+    expect(st.soldiers).toHaveLength(START_FREE_PULLS);
+    expect(st.gold).toBe(START_GOLD);
   });
 
   it('garantit un épique ou mieux au bout de la série de pitié', () => {
@@ -144,17 +141,67 @@ describe('escouade triée', () => {
   });
 });
 
+describe('titres et légion d’honneur', () => {
+  it('donne le titre Légende au niveau maximum', () => {
+    const st = stateWithSoldiers(1);
+    const [s] = st.soldiers;
+    addXp(s, 1e9);
+    expect(s.level).toBe(MAX_LEVEL);
+    expect(s.titles).toEqual(['legende']);
+  });
+
+  it('retire les améliorations choisies et repart au niveau 1 avec des choix de légende', () => {
+    const st = stateWithSoldiers(1, MAX_LEVEL);
+    const [s] = st.soldiers;
+    s.titles = ['legende'];
+    s.upgrades = ['vitality', 'power', 'sprint'];
+    s.picksLeft = 0;
+    s.trainingsLeft = 0;
+    expect(legionOfHonor(st, s.id, ['power', 'sprint'])).toBe(true);
+    expect(s.upgrades).toEqual(['vitality']);
+    expect(s.level).toBe(1);
+    expect(s.xp).toBe(0);
+    expect(s.picksLeft).toBe(LEGION_PICKS);
+    expect(s.trainingsLeft).toBe(TRAINING_PER_SOLDIER);
+    expect(s.upgradeChoices).toHaveLength(UPGRADE_CHOICES);
+    expect(s.upgradeChoices!.every((id) => LEGEND_UPGRADES.some((u) => u.id === id))).toBe(true);
+    expect(s.titles).toEqual(['legende', 'legion']);
+  });
+
+  it('refuse la légion avant le niveau max ou avec des améliorations en attente', () => {
+    const st = stateWithSoldiers(1, MAX_LEVEL - 1);
+    const [s] = st.soldiers;
+    s.picksLeft = 0;
+    expect(legionOfHonor(st, s.id, [])).toBe(false);
+    s.level = MAX_LEVEL;
+    s.picksLeft = 1;
+    expect(legionOfHonor(st, s.id, [])).toBe(false);
+  });
+
+  it('plafonne le nombre d’améliorations', () => {
+    const st = stateWithSoldiers(1, 4);
+    const [s] = st.soldiers;
+    s.upgrades = UPGRADES.slice(0, MAX_UPGRADES).map((u) => u.id);
+    s.picksLeft = 0;
+    s.upgradeChoices = null;
+    s.level = 5;
+    grantLevelPicks(s, 4);
+    expect(s.picksLeft).toBe(0);
+    expect(s.upgradeChoices).toBeNull();
+  });
+});
+
 describe('entraînement et campagne', () => {
-  it('consomme les entraînements du jour et donne de l’expérience', () => {
-    const st = stateWithSoldiers(5, 20);
-    const squad = st.soldiers.map((s) => s.id);
-    for (let i = 0; i < TRAINING_PER_DAY; i++) {
+  it('limite chaque soldat à 3 entraînements dans sa vie', () => {
+    const st = stateWithSoldiers(1, 20);
+    const squad = [st.soldiers[0].id];
+    for (let i = 0; i < TRAINING_PER_SOLDIER; i++) {
       const r = launchBattle(st, { mode: 'training', squad }, i + 1);
       expect(r.ok).toBe(true);
     }
-    expect(st.trainingLeft).toBe(0);
+    expect(st.soldiers[0].trainingsLeft).toBe(0);
     expect(launchBattle(st, { mode: 'training', squad }, 9).ok).toBe(false);
-    expect(st.soldiers.some((s) => s.xp > 0 || s.level > 20)).toBe(true);
+    expect(st.soldiers[0].xp > 0 || st.soldiers[0].level > 20).toBe(true);
   });
 
   it('refuse un niveau verrouillé, puis donne une arme à la première victoire', () => {
@@ -169,26 +216,15 @@ describe('entraînement et campagne', () => {
     expect(r.ok && r.report.firstClear).toBe(true);
   });
 
-  it("met hors de combat jusqu'au lendemain les soldats tombés", () => {
-    setNow(new Date(2026, 0, 10, 15, 30).getTime());
-    const st = stateWithSoldiers(1, 1);
+  it('retire définitivement de l’escouade les soldats tombés', () => {
+    const st = stateWithSoldiers(2, 1);
     st.campaignLevel = 9;
-    const id = st.soldiers[0].id;
-    const r = launchBattle(st, { mode: 'campaign', squad: [id], level: 10 }, 5);
+    const [fallen, survivor] = st.soldiers;
+    const r = launchBattle(st, { mode: 'campaign', squad: [fallen.id], level: 10 }, 5);
     expect(r.ok && r.report.won).toBe(false);
-    const s: Soldier = st.soldiers[0];
-    expect(s.deadUntil).toBe(new Date(2026, 0, 11).getTime());
-    expect(isAvailable(s)).toBe(false);
-    expect(launchBattle(st, { mode: 'training', squad: [id] }).ok).toBe(false);
-
-    setNow(new Date(2026, 0, 10, 23, 59).getTime());
-    ensureDay(st);
-    expect(s.deadUntil).not.toBeNull();
-
-    setNow(nextMidnight() + 1000);
-    expect(ensureDay(st)).toBe(true);
-    expect(s.deadUntil).toBeNull();
-    expect(st.trainingLeft).toBe(TRAINING_PER_DAY);
-    expect(isAvailable(s)).toBe(true);
+    expect(r.ok && r.report.soldiers[0].died).toBe(true);
+    expect(st.soldiers.some((s) => s.id === fallen.id)).toBe(false);
+    expect(st.soldiers.some((s) => s.id === survivor.id)).toBe(true);
+    expect(launchBattle(st, { mode: 'campaign', squad: [fallen.id], level: 10 }).ok).toBe(false);
   });
 });

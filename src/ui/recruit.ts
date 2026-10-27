@@ -60,8 +60,8 @@ export function renderRecruit(): HTMLElement {
       { class: 'recruit-box' },
       h(
         'button',
-        { class: 'btn btn-big btn-gold', disabled: !st.freePull, onclick: () => doPull('free') },
-        st.freePull ? 'Tirage gratuit du jour' : 'Tirage gratuit déjà utilisé',
+        { class: 'btn btn-big btn-gold', disabled: st.freePulls <= 0, onclick: () => doPull('free') },
+        st.freePulls > 0 ? `Tirage gratuit (${st.freePulls} restant${st.freePulls > 1 ? 's' : ''})` : 'Plus de tirage gratuit',
       ),
       h('button', { class: 'btn btn-big', disabled: st.gold < PULL_COST, onclick: () => doPull('one') }, `Recruter x1 (${PULL_COST} or)`),
       h('button', { class: 'btn btn-big', disabled: st.gold < PULL10_COST, onclick: () => doPull('ten') }, `Recruter x10 (${PULL10_COST} or)`),
@@ -78,7 +78,7 @@ export function renderRecruit(): HTMLElement {
         ),
       ),
       h('p', { class: 'muted small' }, `Garantie : un soldat Épique ou mieux est assuré tous les ${PITY_LIMIT} tirages (encore ${toPity + 1} tirage${toPity > 0 ? 's' : ''} maximum).`),
-      h('p', { class: 'muted small' }, "Chaque soldat recruté reçoit 3 choix d'amélioration parmi 3 propositions. L'or provient des combats ; un tirage gratuit est offert chaque jour."),
+      h('p', { class: 'muted small' }, "Chaque soldat recruté reçoit 3 choix d'amélioration parmi 3 propositions. L'or provient des combats."),
     ),
   );
 }

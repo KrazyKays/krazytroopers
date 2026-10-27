@@ -1,8 +1,7 @@
 import './style.css';
-import { dayKey, nextMidnight, now } from './game/clock';
-import { ensureDay, getState, loadState, mutate, subscribe } from './game/state';
+import { getState, loadState, subscribe } from './game/state';
 import { h } from './ui/dom';
-import { formatDuration, fmt, refreshModals } from './ui/components';
+import { fmt, refreshModals } from './ui/components';
 import { renderArsenal } from './ui/arsenal';
 import { renderCombat } from './ui/combat';
 import { renderRecruit } from './ui/recruit';
@@ -24,18 +23,11 @@ let tab: Tab = getState().soldiers.length === 0 ? 'recruit' : 'roster';
 
 const root = document.getElementById('app')!;
 const goldEl = h('span', { class: 'gold' });
-const dayEl = h('span', { class: 'muted' });
-const timerEl = h('span', { class: 'timer' });
 const tabsEl = h('nav', { class: 'tabs' });
 const mainEl = h('main', { class: 'content' });
 
 root.append(
-  h(
-    'header',
-    { class: 'topbar' },
-    h('h1', null, 'Krazy Troopers'),
-    h('div', { class: 'hud' }, goldEl, dayEl, h('span', { class: 'muted' }, 'Nouveau jour dans '), timerEl),
-  ),
+  h('header', { class: 'topbar' }, h('h1', null, 'Krazy Troopers'), h('div', { class: 'hud' }, goldEl)),
   tabsEl,
   mainEl,
 );
@@ -43,10 +35,9 @@ root.append(
 function render(): void {
   const st = getState();
   goldEl.textContent = `${fmt(st.gold)} or`;
-  dayEl.textContent = `Entraînements : ${st.trainingLeft}`;
   tabsEl.replaceChildren(
     ...TABS.map((t) => {
-      const badge = t.id === 'roster' ? st.soldiers.reduce((n, s) => n + (s.picksLeft > 0 ? 1 : 0), 0) : t.id === 'recruit' && st.freePull ? 1 : 0;
+      const badge = t.id === 'roster' ? st.soldiers.reduce((n, s) => n + (s.picksLeft > 0 ? 1 : 0), 0) : t.id === 'recruit' && st.freePulls > 0 ? 1 : 0;
       return h(
         'button',
         {
@@ -67,17 +58,4 @@ function render(): void {
 
 subscribe(render);
 
-function tick(): void {
-  const t = now();
-  timerEl.textContent = formatDuration(nextMidnight(t) - t);
-  if (getState().dayKey !== dayKey(t) || getState().soldiers.some((s) => s.deadUntil !== null && t >= s.deadUntil)) {
-    mutate((st) => ensureDay(st, t));
-  }
-}
-
-tick();
 render();
-setInterval(tick, 1000);
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) tick();
-});

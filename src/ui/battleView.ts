@@ -182,7 +182,7 @@ function resultPanel(report: BattleReport, close: () => void): HTMLElement {
       'li',
       { class: s.died ? 'died' : '' },
       h('b', null, s.name),
-      s.died ? ' est tombé au combat : indisponible jusqu’à demain.' : ` +${fmt(s.xpGained)} XP`,
+      s.died ? ' est mort au combat : il quitte l’escouade.' : ` +${fmt(s.xpGained)} XP`,
       s.levelsGained > 0 && h('span', { class: 'levelup' }, ` Niveau ${s.newLevel} !`),
       s.kills > 0 && h('span', { class: 'muted' }, ` (${s.kills} élimination${s.kills > 1 ? 's' : ''})`),
     ),

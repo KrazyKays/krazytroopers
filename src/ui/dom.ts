@@ -6,6 +6,7 @@ type Props = {
   title?: string;
   type?: string;
   disabled?: boolean;
+  checked?: boolean;
   hidden?: boolean;
   value?: string;
   placeholder?: string;
