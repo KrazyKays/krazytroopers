@@ -18,6 +18,7 @@ export function createInitialState(): GameState {
     freePull: true,
     nextId: 1,
     stats: { won: 0, lost: 0, deaths: 0 },
+    battleSpeed: 1,
   };
   for (const defId of START_WEAPONS) st.weapons.push({ uid: `w${st.nextId++}`, defId });
   return st;
@@ -62,7 +63,9 @@ function isValidState(x: unknown): x is GameState {
 export function parseSave(raw: string): GameState | null {
   try {
     const data = JSON.parse(raw);
-    return isValidState(data) ? data : null;
+    return isValidState(data)
+      ? { ...data, battleSpeed: data.battleSpeed ?? 1, soldiers: data.soldiers.map((s: Soldier) => ({ ...s, favorite: !!s.favorite })) }
+      : null;
   } catch {
     return null;
   }

@@ -1,5 +1,6 @@
-import { PITY_LIMIT, PULL_COST, SQUAD_MAX, TRAINING_PER_DAY, UPGRADE_PICKS } from '../game/data';
-import { getState, parseSave, replaceState, resetState, serializeState } from '../game/state';
+import { PICK_EVERY_LEVELS, PITY_LIMIT, PULL_COST, SQUAD_MAX, TRAINING_PER_DAY, UPGRADE_PICKS } from '../game/data';
+import { getState, mutate, parseSave, replaceState, resetState, serializeState } from '../game/state';
+import { BATTLE_SPEEDS } from '../game/types';
 import { h } from './dom';
 import { toast } from './components';
 
@@ -42,7 +43,7 @@ export function renderSettings(): HTMLElement {
         'ul',
         { class: 'rules' },
         h('li', null, h('b', null, 'Recruter : '), `tirez des soldats au hasard (${PULL_COST} or, ou 1 tirage gratuit par jour). Un soldat Épique ou mieux est garanti tous les ${PITY_LIMIT} tirages.`),
-        h('li', null, h('b', null, 'Améliorer : '), `chaque recrue propose ${UPGRADE_PICKS} fois de suite 3 améliorations : à vous d'en choisir une à chaque fois.`),
+        h('li', null, h('b', null, 'Améliorer : '), `chaque recrue propose ${UPGRADE_PICKS} fois de suite 3 améliorations, puis une nouvelle fois tous les ${PICK_EVERY_LEVELS} niveaux : à vous d'en choisir une à chaque fois.`),
         h('li', null, h('b', null, "S'entraîner : "), `${TRAINING_PER_DAY} combats d'entraînement par jour pour gagner de l'expérience.`),
         h('li', null, h('b', null, 'Campagne : '), `engagez jusqu'à ${SQUAD_MAX} soldats niveau après niveau face à toujours plus d'ennemis. Récompenses : armes, XP et or. Un boss vous attend tous les 5 niveaux.`),
         h('li', null, h('b', null, 'Danger : '), "un soldat qui meurt dans un combat (entraînement ou campagne) est indisponible jusqu'au lendemain (minuit, heure locale)."),
@@ -55,6 +56,26 @@ export function renderSettings(): HTMLElement {
       { class: 'panel' },
       h('p', null, `Victoires : ${st.stats.won} · Défaites : ${st.stats.lost} · Soldats tombés : ${st.stats.deaths}`),
       h('p', null, `Tirages effectués : ${st.totalPulls} · Campagne : niveau ${st.campaignLevel} terminé`),
+    ),
+    h('h2', null, 'Combat'),
+    h(
+      'div',
+      { class: 'panel' },
+      h('p', { class: 'muted' }, 'Vitesse de combat par défaut. Elle peut toujours être modifiée pendant un combat.'),
+      h(
+        'div',
+        { class: 'row' },
+        BATTLE_SPEEDS.map((s) =>
+          h(
+            'button',
+            {
+              class: `btn btn-small${st.battleSpeed === s ? ' active' : ''}`,
+              onclick: () => mutate((g) => { g.battleSpeed = s; }),
+            },
+            `x${s}`,
+          ),
+        ),
+      ),
     ),
     h('h2', null, 'Sauvegarde'),
     h(

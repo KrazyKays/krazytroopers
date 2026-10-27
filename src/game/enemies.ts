@@ -21,12 +21,12 @@ const TEMPLATES: Template[] = [
   { id: 'grunt', name: 'Fantassin', hp: 80, power: 1, speed: 64, armor: 0, weapon: 'pistol', minLevel: 1, weight: 40, uniform: '#8a3b3b', helmet: '#4a1f1f' },
   { id: 'stabber', name: 'Coupe-jarret', hp: 60, power: 1.1, speed: 90, armor: 0, weapon: 'knife', minLevel: 2, weight: 20, uniform: '#7a4a2a', helmet: '#3a2a1a' },
   { id: 'brute', name: 'Brute', hp: 160, power: 1, speed: 50, armor: 10, weapon: 'axe', minLevel: 3, weight: 15, uniform: '#5a3a3a', helmet: '#2f2f35' },
-  { id: 'sniper', name: "Tireur d'Ã©lite", hp: 50, power: 0.7, speed: 55, armor: 0, weapon: 'sniper', minLevel: 4, weight: 10, uniform: '#5a2a4a', helmet: '#2a1a2a' },
+  { id: 'sniper', name: "Tireur d'élite", hp: 50, power: 0.7, speed: 55, armor: 0, weapon: 'sniper', minLevel: 4, weight: 10, uniform: '#5a2a4a', helmet: '#2a1a2a' },
   { id: 'gunner', name: 'Mitrailleur', hp: 100, power: 0.9, speed: 55, armor: 5, weapon: 'rifle', minLevel: 5, weight: 18, uniform: '#8a5a2a', helmet: '#4a3a1a' },
   { id: 'rocket', name: 'Lance-roquettes', hp: 90, power: 0.6, speed: 52, armor: 0, weapon: 'bazooka', minLevel: 7, weight: 8, uniform: '#6a2a2a', helmet: '#1f1f1f' },
 ];
 
-const BOSS_NAMES = ['Capitaine Moustache', 'GÃ©nÃ©ral PÃ©tard', 'Colonel Boulet', 'Sergent Massacre', 'Commandant Tonnerre', 'MarÃ©chal Bedaine'];
+const BOSS_NAMES = ['Capitaine Moustache', 'Général Pétard', 'Colonel Boulet', 'Sergent Massacre', 'Commandant Tonnerre', 'Maréchal Bedaine'];
 const BOSS_WEAPONS = ['shotgun', 'bazooka', 'minigun', 'railgun'];
 
 export const BOSS_EVERY = 5;

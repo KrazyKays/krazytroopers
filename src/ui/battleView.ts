@@ -1,6 +1,8 @@
 import { ARENA_H, ARENA_W, type BattleEvent, type BattleResult, type BattleUnit, type Frame } from '../game/battle';
 import { RARITIES } from '../game/data';
 import type { BattleReport } from '../game/combat';
+import { getState } from '../game/state';
+import { BATTLE_SPEEDS, type BattleSpeed } from '../game/types';
 import { h, html } from './dom';
 import { spriteSvg } from './avatar';
 import { fmt, weaponIcon } from './components';
@@ -14,7 +16,7 @@ interface UnitView {
 
 export function openBattle(title: string, units: BattleUnit[], result: BattleResult, report: BattleReport, onClose: () => void): void {
   const frames = result.frames;
-  let speed = 1;
+  let speed: BattleSpeed = getState().battleSpeed;
   let idx = 0;
   let timer: number | undefined;
   let finished = false;
@@ -136,7 +138,7 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
   }
 
   const overlay = h('div', { class: 'battle-overlay' });
-  const speedButtons = [1, 2, 4].map((s) =>
+  const speedButtons = BATTLE_SPEEDS.map((s) =>
     h(
       'button',
       {
@@ -185,12 +187,32 @@ function resultPanel(report: BattleReport, close: () => void): HTMLElement {
       s.kills > 0 && h('span', { class: 'muted' }, ` (${s.kills} élimination${s.kills > 1 ? 's' : ''})`),
     ),
   );
+  const details = h(
+    'table',
+    { class: 'stats-table' },
+    h('tr', null, h('th', null, 'Soldat'), h('th', null, 'Infligés'), h('th', null, 'Subis'), h('th', null, 'Soins reçus')),
+    report.soldiers.map((s) => h('tr', { class: s.died ? 'died' : '' }, h('td', null, s.name), h('td', null, fmt(Math.round(s.dealt))), h('td', null, fmt(Math.round(s.taken))), h('td', null, fmt(Math.round(s.healed))))),
+  );
+  const detailsBox = h('div', { hidden: true }, details);
+  const toggle = h(
+    'button',
+    {
+      class: 'btn btn-small',
+      onclick: () => {
+        detailsBox.hidden = !detailsBox.hidden;
+        toggle.textContent = detailsBox.hidden ? 'Stats avancées' : 'Masquer les stats avancées';
+      },
+    },
+    'Stats avancées',
+  );
   return h(
     'div',
     { class: `result ${report.won ? 'won' : 'lost'}` },
     h('h2', null, title),
     report.firstClear && h('p', { class: 'levelup' }, `Niveau ${report.level} de la campagne terminé !`),
     h('ul', { class: 'result-list' }, rows),
+    toggle,
+    detailsBox,
     h(
       'div',
       { class: 'result-rewards' },

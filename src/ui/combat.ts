@@ -1,11 +1,12 @@
-﻿import { RARITY_ORDER, SQUAD_MAX, TRAINING_PER_DAY } from '../game/data';
+﻿import { SQUAD_MAX, TRAINING_PER_DAY } from '../game/data';
 import { campaignGold, campaignXp, launchBattle, trainingXp, TRAINING_GOLD } from '../game/combat';
 import { previewCampaign } from '../game/enemies';
+import { sortSquad } from '../game/roster';
 import { getState, isAvailable, mutate, refresh } from '../game/state';
 import type { GameState } from '../game/types';
 import { h } from './dom';
 import { openBattle } from './battleView';
-import { fmt, soldierCard, toast } from './components';
+import { fmt, getSquadSort, soldierCard, sortBar, toast } from './components';
 
 type Mode = 'training' | 'campaign';
 
@@ -15,8 +16,8 @@ let campaignPick: number | null = null;
 
 function autoSelect(st: GameState): void {
   selected.clear();
-  const ready = st.soldiers.filter((s) => isAvailable(s)).sort((a, b) => b.level - a.level || RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity));
-  for (const s of ready.slice(0, SQUAD_MAX)) selected.add(s.id);
+  const ready = st.soldiers.filter((s) => isAvailable(s));
+  for (const s of sortSquad(st, getSquadSort(), ready).slice(0, SQUAD_MAX)) selected.add(s.id);
 }
 
 function launch(): void {
@@ -109,24 +110,29 @@ export function renderCombat(): HTMLElement {
       ? h('p', { class: 'muted' }, "Vous n'avez aucun soldat : recrutez-en dans l'onglet « Recruter ».")
       : h(
           'div',
-          { class: 'grid' },
-          [...st.soldiers]
-            .sort((a, b) => Number(isAvailable(b)) - Number(isAvailable(a)) || b.level - a.level)
-            .map((s) =>
-              soldierCard(st, s, {
-                selected: selected.has(s.id),
-                onclick: () => {
-                  if (!isAvailable(s)) {
-                    toast(`${s.name} est hors de combat jusqu'à demain.`, 'bad');
-                    return;
-                  }
-                  if (selected.has(s.id)) selected.delete(s.id);
-                  else if (selected.size >= SQUAD_MAX) toast(`Maximum ${SQUAD_MAX} soldats par combat.`, 'bad');
-                  else selected.add(s.id);
-                  refresh();
-                },
-              }),
-            ),
+          null,
+          sortBar(),
+          h(
+            'div',
+            { class: 'grid' },
+            sortSquad(st, getSquadSort())
+              .sort((a, b) => Number(isAvailable(b)) - Number(isAvailable(a)))
+              .map((s) =>
+                soldierCard(st, s, {
+                  selected: selected.has(s.id),
+                  onclick: () => {
+                    if (!isAvailable(s)) {
+                      toast(`${s.name} est hors de combat jusqu'à demain.`, 'bad');
+                      return;
+                    }
+                    if (selected.has(s.id)) selected.delete(s.id);
+                    else if (selected.size >= SQUAD_MAX) toast(`Maximum ${SQUAD_MAX} soldats par combat.`, 'bad');
+                    else selected.add(s.id);
+                    refresh();
+                  },
+                }),
+              ),
+          ),
         ),
     unarmed.length > 0 && h('p', { class: 'warn' }, `Attention : ${unarmed.map((s) => s!.name).join(', ')} ${unarmed.length > 1 ? 'combattent' : 'combat'} à mains nues. Équipez une arme depuis l'onglet Escouade.`),
     ready === 0 && st.soldiers.length > 0 && h('p', { class: 'warn' }, "Tous vos soldats sont hors de combat : ils reviendront demain. En attendant, vous pouvez recruter."),

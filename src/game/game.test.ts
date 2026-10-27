@@ -2,14 +2,13 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { simulate } from './battle';
 import { setNow, nextMidnight } from './clock';
 import { launchBattle } from './combat';
-import { PITY_LIMIT, PULL_COST, TRAINING_PER_DAY, UPGRADE_CHOICES, UPGRADE_PICKS } from './data';
-import { buildCampaignEnemies, campaignEnemyCount } from './enemies';
+import { PITY_LIMIT, PULL_COST, TRAINING_PER_DAY, UPGRADE_CHOICES, UPGRADE_PICKS, WEAPONS_BY_ID } from './data';
+import { buildCampaignEnemies } from './enemies';
 import { mulberry32 } from './rng';
-import { createSoldier, equipWeapon, pickUpgrade, recruit, releaseSoldier, sellWeapon } from './roster';
+import { createSoldier, equipWeapon, grantLevelPicks, pickUpgrade, recruit, releaseSoldier, sellWeapon, sortSquad, toggleFavorite } from './roster';
 import { createInitialState, ensureDay, isAvailable } from './state';
 import { computeStats } from './stats';
 import { soldierLook } from './look';
-import { WEAPONS_BY_ID } from './data';
 import type { GameState, Soldier } from './types';
 
 afterEach(() => setNow(null));
@@ -47,14 +46,17 @@ describe('combat', () => {
     expect(a.ticks).toBe(b.ticks);
     expect(a.frames.at(-1)).toEqual(b.frames.at(-1));
   });
-
-  it('augmente le nombre d’ennemis avec le niveau', () => {
-    expect(campaignEnemyCount(20)).toBeGreaterThan(campaignEnemyCount(5));
-    expect(buildCampaignEnemies(10).length).toBe(campaignEnemyCount(10));
-  });
 });
 
 describe('recrutement', () => {
+  it("débite l'or et refuse si insuffisant", () => {
+    const st = createInitialState();
+    st.gold = PULL_COST;
+    expect(recruit(st, 'one').ok).toBe(true);
+    expect(st.gold).toBe(0);
+    expect(recruit(st, 'one').ok).toBe(false);
+  });
+
   it('limite le tirage gratuit à un par jour', () => {
     const st = createInitialState();
     expect(recruit(st, 'free').ok).toBe(true);
@@ -63,14 +65,6 @@ describe('recrutement', () => {
     st.dayKey = 'hier';
     ensureDay(st);
     expect(recruit(st, 'free').ok).toBe(true);
-  });
-
-  it("débite l'or et refuse si insuffisant", () => {
-    const st = createInitialState();
-    st.gold = PULL_COST;
-    expect(recruit(st, 'one').ok).toBe(true);
-    expect(st.gold).toBe(0);
-    expect(recruit(st, 'one').ok).toBe(false);
   });
 
   it('garantit un épique ou mieux au bout de la série de pitié', () => {
@@ -86,7 +80,7 @@ describe('recrutement', () => {
     expect(['epic', 'legendary']).toContain(rarities[PITY_LIMIT - 1]);
   });
 
-  it('propose 3 améliorations à choisir 3 fois', () => {
+  it('propose 3 améliorations à choisir 3 fois, et les débloque tous les 5 niveaux', () => {
     const st = createInitialState();
     const s = createSoldier(st, 'rare', mulberry32(1));
     st.soldiers.push(s);
@@ -99,6 +93,12 @@ describe('recrutement', () => {
     expect(new Set(s.upgrades).size).toBe(UPGRADE_PICKS);
     expect(s.upgradeChoices).toBeNull();
     expect(pickUpgrade(st, s.id, 'vitality')).toBe(false);
+
+    s.picksLeft = 0;
+    s.level = 5;
+    grantLevelPicks(s, 4);
+    expect(s.picksLeft).toBe(1);
+    expect(s.upgradeChoices).toHaveLength(UPGRADE_CHOICES);
   });
 });
 
@@ -121,6 +121,29 @@ describe('arsenal', () => {
   });
 });
 
+describe('escouade triée', () => {
+  it('place les favoris en tête et trie par niveau puis ancienneté', () => {
+    const st = stateWithSoldiers(3);
+    const [a, b, c] = st.soldiers;
+    a.level = 2;
+    b.level = 5;
+    c.level = 2;
+    toggleFavorite(st, c.id);
+    expect(sortSquad(st, 'level').map((s) => s.id)).toEqual([b.id, a.id, c.id]);
+    expect(sortSquad(st, 'favorite').map((s) => s.id)).toEqual([c.id, b.id, a.id]);
+    expect(sortSquad(st, 'seniority').map((s) => s.id)).toEqual([a.id, b.id, c.id]);
+  });
+
+  it('bascule le statut favori', () => {
+    const st = stateWithSoldiers(1);
+    const [s] = st.soldiers;
+    toggleFavorite(st, s.id);
+    expect(s.favorite).toBe(true);
+    toggleFavorite(st, s.id);
+    expect(s.favorite).toBe(false);
+  });
+});
+
 describe('entraînement et campagne', () => {
   it('consomme les entraînements du jour et donne de l’expérience', () => {
     const st = stateWithSoldiers(5, 20);
@@ -134,15 +157,11 @@ describe('entraînement et campagne', () => {
     expect(st.soldiers.some((s) => s.xp > 0 || s.level > 20)).toBe(true);
   });
 
-  it('refuse les niveaux non débloqués', () => {
-    const st = stateWithSoldiers(1);
-    expect(launchBattle(st, { mode: 'campaign', squad: [st.soldiers[0].id], level: 2 }).ok).toBe(false);
-  });
-
-  it('fait progresser la campagne et donne une arme à la première victoire', () => {
+  it('refuse un niveau verrouillé, puis donne une arme à la première victoire', () => {
     const st = stateWithSoldiers(5, 3);
     const squad = st.soldiers.map((s) => s.id);
     const weapons = st.weapons.length;
+    expect(launchBattle(st, { mode: 'campaign', squad, level: 2 }).ok).toBe(false);
     const r = launchBattle(st, { mode: 'campaign', squad, level: 1 }, 7);
     expect(r.ok && r.report.won).toBe(true);
     expect(st.campaignLevel).toBe(1);

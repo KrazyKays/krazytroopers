@@ -24,12 +24,16 @@ export interface Soldier {
   weaponUid: string | null;
   deadUntil: number | null;
   kills: number;
+  favorite: boolean;
 }
 
 export interface WeaponItem {
   uid: string;
   defId: string;
 }
+
+export const BATTLE_SPEEDS = [1, 2, 4] as const;
+export type BattleSpeed = (typeof BATTLE_SPEEDS)[number];
 
 export interface GameState {
   version: 1;
@@ -44,6 +48,7 @@ export interface GameState {
   freePull: boolean;
   nextId: number;
   stats: { won: number; lost: number; deaths: number };
+  battleSpeed: BattleSpeed;
 }
 
 export type WeaponShape =

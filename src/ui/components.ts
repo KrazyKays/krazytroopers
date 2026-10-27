@@ -1,7 +1,8 @@
 import { RARITIES, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
-import { isAvailable } from '../game/state';
+import { isAvailable, refresh } from '../game/state';
 import { soldierLook } from '../game/look';
 import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
+import { SQUAD_SORTS, type SquadSort } from '../game/roster';
 import { MAX_LEVEL } from '../game/data';
 import type { GameState, Soldier, WeaponDef } from '../game/types';
 import { spriteSvg, weaponSvg } from './avatar';
@@ -58,11 +59,27 @@ export function soldierCard(st: GameState, s: Soldier, opts: { onclick?: () => v
     h(
       'div',
       { class: 'card-body' },
-      h('div', { class: 'card-name' }, s.name),
+      h('div', { class: 'card-name' }, s.favorite && h('span', { class: 'fav-star', title: 'Favori' }, '★ '), s.name),
       h('div', { class: 'card-sub' }, rarityTag(s.rarity), ` · Niv. ${s.level}`),
       xpBar(s),
       h('div', { class: 'card-stats' }, `PV ${fmt(stats.maxHp)} · DPS ${fmt(dps(stats), 1)}`),
       statusPill(s, weapon),
+    ),
+  );
+}
+
+let squadSort: SquadSort = 'level';
+
+export function getSquadSort(): SquadSort {
+  return squadSort;
+}
+
+export function sortBar(): HTMLElement {
+  return h(
+    'div',
+    { class: 'subtabs' },
+    SQUAD_SORTS.map((o) =>
+      h('button', { class: `subtab${o.key === squadSort ? ' active' : ''}`, onclick: () => { squadSort = o.key; refresh(); } }, o.label),
     ),
   );
 }

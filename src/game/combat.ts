@@ -3,7 +3,7 @@ import { simulate, type BattleResult, type BattleUnit } from './battle';
 import { SQUAD_MAX } from './data';
 import { buildCampaignEnemies, buildTrainingEnemies, isBossLevel } from './enemies';
 import { soldierLook } from './look';
-import { rollWeaponDrop } from './roster';
+import { grantLevelPicks, rollWeaponDrop } from './roster';
 import { aggregateMods, addXp, computeStats, weaponForSoldier } from './stats';
 import { isAvailable, nextUid } from './state';
 import { mulberry32, randomSeed } from './rng';
@@ -21,6 +21,9 @@ export interface SoldierReport {
   newLevel: number;
   died: boolean;
   kills: number;
+  dealt: number;
+  taken: number;
+  healed: number;
 }
 
 export interface BattleReport {
@@ -86,14 +89,17 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   const soldiers: SoldierReport[] = squad.map((s) => {
     const died = result.deadIds.includes(s.id);
     const gained = died ? 0 : Math.round(xp * (1 + aggregateMods(s.upgrades).xpPct));
+    const prevLevel = s.level;
     const levelsGained = addXp(s, gained);
+    grantLevelPicks(s, prevLevel);
     const kills = result.kills[s.id] ?? 0;
+    const { dealt, taken, healed } = result.totals[s.id];
     s.kills += kills;
     if (died) {
       s.deadUntil = nextMidnight(t);
       st.stats.deaths++;
     }
-    return { id: s.id, name: s.name, xpGained: gained, levelsGained, newLevel: s.level, died, kills };
+    return { id: s.id, name: s.name, xpGained: gained, levelsGained, newLevel: s.level, died, kills, dealt, taken, healed };
   });
 
   let gold = 0;

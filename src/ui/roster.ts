@@ -1,11 +1,10 @@
-import { RARITIES, RARITY_ORDER, UPGRADES_BY_ID, UPGRADE_PICKS, WEAPONS_BY_ID, SQUAD_MAX } from '../game/data';
-import { equipWeapon, pickUpgrade, releaseSoldier } from '../game/roster';
+import { MAX_LEVEL, PICK_EVERY_LEVELS, RARITIES, RARITY_ORDER, UPGRADES_BY_ID, WEAPONS_BY_ID, SQUAD_MAX } from '../game/data';
+import { equipWeapon, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, renameSoldier, sortSquad, toggleFavorite } from '../game/roster';
 import { getState, mutate } from '../game/state';
 import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
-import { MAX_LEVEL } from '../game/data';
 import type { Soldier } from '../game/types';
 import { h } from './dom';
-import { fmt, openModal, rarityTag, soldierCard, soldierSprite, toast, weaponIcon, xpBar } from './components';
+import { fmt, getSquadSort, openModal, rarityTag, sortBar, soldierCard, soldierSprite, toast, weaponIcon, xpBar } from './components';
 
 export function renderRoster(): HTMLElement {
   const st = getState();
@@ -17,20 +16,35 @@ export function renderRoster(): HTMLElement {
       h('p', null, "Rendez-vous dans l'onglet « Recruter » pour tirer vos premiers soldats."),
     );
   }
-  const order = (s: Soldier) => RARITY_ORDER.indexOf(s.rarity);
-  const sorted = [...st.soldiers].sort((a, b) => order(b) - order(a) || b.level - a.level || a.name.localeCompare(b.name));
   const pending = st.soldiers.reduce((n, s) => n + s.picksLeft, 0);
   return h(
     'section',
     null,
     h('div', { class: 'section-head' }, h('h2', null, `Escouade (${st.soldiers.length})`), pending > 0 && h('span', { class: 'pill pill-pick' }, `${pending} amélioration${pending > 1 ? 's' : ''} en attente`)),
-    h('p', { class: 'muted' }, `Cliquez sur un soldat pour choisir ses ${UPGRADE_PICKS} améliorations et gérer son équipement. Vous pouvez engager ${SQUAD_MAX} soldats par combat.`),
-    h('div', { class: 'grid' }, sorted.map((s) => soldierCard(st, s, { onclick: () => openSoldier(s.id) }))),
+    h('p', { class: 'muted' }, `Cliquez sur un soldat pour choisir ses améliorations et gérer son équipement. Une nouvelle amélioration est débloquée tous les ${PICK_EVERY_LEVELS} niveaux. Vous pouvez engager ${SQUAD_MAX} soldats par combat.`),
+    sortBar(),
+    h('div', { class: 'grid' }, sortSquad(st, getSquadSort()).map((s) => soldierCard(st, s, { onclick: () => openSoldier(s.id) }))),
   );
 }
 
 function statRow(label: string, value: string): HTMLElement {
   return h('div', { class: 'stat-row' }, h('span', null, label), h('b', null, value));
+}
+
+function renameForm(s: Soldier): HTMLElement {
+  const input = h('input', { class: 'rename-input', type: 'text', value: s.name, maxlength: NAME_MAX_LENGTH });
+  return h(
+    'form',
+    {
+      class: 'rename-form',
+      onsubmit: (e) => {
+        e.preventDefault();
+        if (!mutate((st) => renameSoldier(st, s.id, input.value))) toast('Le nom ne peut pas être vide.', 'bad');
+      },
+    },
+    input,
+    h('button', { class: 'btn btn-small', type: 'submit' }, 'Renommer'),
+  );
 }
 
 export function openSoldier(id: string): void {
@@ -52,7 +66,7 @@ export function openSoldier(id: string): void {
       h(
         'div',
         null,
-        h('h2', null, s.name),
+        renameForm(s),
         h('div', null, rarityTag(s.rarity), ` · Niveau ${s.level}${s.level >= MAX_LEVEL ? ' (max)' : ''}`),
         xpBar(s),
         s.level < MAX_LEVEL && h('div', { class: 'muted small' }, `${fmt(s.xp)} / ${fmt(xpForNext(s.level))} XP`),
@@ -75,11 +89,11 @@ export function openSoldier(id: string): void {
 
     let upgrades: HTMLElement;
     if (s.picksLeft > 0 && s.upgradeChoices) {
-      const n = UPGRADE_PICKS - s.picksLeft + 1;
+      const n = s.upgrades.length + 1;
       upgrades = h(
         'div',
         { class: 'upgrade-block' },
-        h('h3', null, `Amélioration ${n} / ${UPGRADE_PICKS} — choisissez-en une`),
+        h('h3', null, `Amélioration ${n} — choisissez-en une`),
         h(
           'div',
           { class: 'choices' },
@@ -112,12 +126,6 @@ export function openSoldier(id: string): void {
     const weaponList = h(
       'div',
       { class: 'weapon-list' },
-      h(
-        'button',
-        { class: `weapon-item${s.weaponUid === null ? ' active' : ''}`, onclick: () => mutate((state) => equipWeapon(state, s.id, null)) },
-        weaponIcon(WEAPONS_BY_ID.fists),
-        h('span', null, h('b', null, 'Poings nus'), h('small', null, 'Aucune arme')),
-      ),
       [...st.weapons]
         .sort((a, b) => RARITY_ORDER.indexOf(WEAPONS_BY_ID[b.defId].rarity) - RARITY_ORDER.indexOf(WEAPONS_BY_ID[a.defId].rarity))
         .map((w) => {
@@ -136,10 +144,16 @@ export function openSoldier(id: string): void {
               null,
               h('b', { style: `color:${RARITIES[def.rarity].color}` }, def.name),
               h('small', null, `${fmt(def.damage)} dégâts · portée ${fmt(def.range)} · ${fmt(def.cooldown, 2)} s${def.aoe ? ` · zone ${def.aoe}` : ''}`),
-              owner && owner.id !== s.id && h('small', { class: 'muted' }, `Équipée par ${owner.name}`),
+              owner && owner.id !== s.id && h('small', { class: 'muted owner' }, `Équipée par ${owner.name}`),
             ),
           );
         }),
+      h(
+        'button',
+        { class: `weapon-item${s.weaponUid === null ? ' active' : ''}`, onclick: () => mutate((state) => equipWeapon(state, s.id, null)) },
+        weaponIcon(WEAPONS_BY_ID.fists),
+        h('span', null, h('b', null, 'Poings nus'), h('small', null, 'Aucune arme')),
+      ),
     );
 
     return h(
@@ -155,10 +169,16 @@ export function openSoldier(id: string): void {
         { class: 'detail-actions' },
         h(
           'button',
+          { class: `btn${s.favorite ? ' btn-gold' : ''}`, onclick: () => mutate((state) => toggleFavorite(state, s.id)) },
+          s.favorite ? '★ Retirer des favoris' : '☆ Ajouter aux favoris',
+        ),
+        h(
+          'button',
           {
             class: 'btn btn-danger',
             onclick: () => {
-              if (!confirm(`Renvoyer ${s.name} pour ${info.releaseValue} or ?`)) return;
+              const warning = s.favorite ? ' Ce soldat est dans vos favoris.' : '';
+              if (!confirm(`Renvoyer ${s.name} pour ${info.releaseValue} or ?${warning}`)) return;
               const gold = mutate((state) => releaseSoldier(state, s.id));
               toast(`${s.name} a quitté l'escouade (+${gold} or).`);
               close();

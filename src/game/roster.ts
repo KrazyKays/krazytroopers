@@ -3,6 +3,7 @@ import {
   HAIR_COLORS,
   HELMET_COLORS,
   NICKNAMES,
+  PICK_EVERY_LEVELS,
   PITY_LIMIT,
   PULL10_COST,
   PULL_COST,
@@ -14,9 +15,9 @@ import {
   UPGRADE_CHOICES,
   UPGRADE_PICKS,
   WEAPONS,
-  WEAPONS_BY_ID,
 } from './data';
 import { nextUid } from './state';
+import { computeStats, dps, weaponForSoldier } from './stats';
 import { pick, range, shuffle, weightedPick, type Rng } from './rng';
 import type { GameState, Rarity, Soldier, WeaponDef } from './types';
 
@@ -33,14 +34,6 @@ export function rollRarity(rng: Rng, pity: number): Rarity {
 export function rollUpgradeChoices(rng: Rng, owned: readonly string[]): string[] {
   const pool = UPGRADES.filter((u) => !owned.includes(u.id)).map((u) => u.id);
   return shuffle(rng, pool).slice(0, UPGRADE_CHOICES);
-}
-
-function autoEquip(st: GameState, s: Soldier): void {
-  const taken = new Set(st.soldiers.map((x) => x.weaponUid));
-  const free = st.weapons.filter((w) => !taken.has(w.uid));
-  const rank = (defId: string) => RARITY_ORDER.indexOf(WEAPONS_BY_ID[defId]?.rarity ?? 'common');
-  free.sort((a, b) => rank(b.defId) - rank(a.defId));
-  if (free[0]) s.weaponUid = free[0].uid;
 }
 
 export function createSoldier(st: GameState, rarity: Rarity, rng: Rng): Soldier {
@@ -65,6 +58,7 @@ export function createSoldier(st: GameState, rarity: Rarity, rng: Rng): Soldier 
     weaponUid: null,
     deadUntil: null,
     kills: 0,
+    favorite: false,
   };
   s.upgradeChoices = rollUpgradeChoices(rng, s.upgrades);
   return s;
@@ -89,7 +83,6 @@ export function recruit(st: GameState, mode: 'free' | 'one' | 'ten', rng: Rng = 
     st.pity = rarity === 'epic' || rarity === 'legendary' ? 0 : st.pity + 1;
     st.totalPulls++;
     const s = createSoldier(st, rarity, rng);
-    autoEquip(st, s);
     st.soldiers.push(s);
     soldiers.push(s);
   }
@@ -103,6 +96,13 @@ export function pickUpgrade(st: GameState, soldierId: string, upgradeId: string)
   s.picksLeft--;
   s.upgradeChoices = s.picksLeft > 0 ? rollUpgradeChoices(Math.random, s.upgrades) : null;
   return true;
+}
+
+export function grantLevelPicks(s: Soldier, fromLevel: number): void {
+  const milestones = Math.floor(s.level / PICK_EVERY_LEVELS) - Math.floor(fromLevel / PICK_EVERY_LEVELS);
+  if (milestones <= 0) return;
+  s.picksLeft += milestones;
+  if (!s.upgradeChoices) s.upgradeChoices = rollUpgradeChoices(Math.random, s.upgrades);
 }
 
 export function equipWeapon(st: GameState, soldierId: string, weaponUid: string | null): void {
@@ -126,6 +126,16 @@ export function sellWeapon(st: GameState, uid: string): number {
   return value;
 }
 
+export const NAME_MAX_LENGTH = 24;
+
+export function renameSoldier(st: GameState, id: string, name: string): boolean {
+  const s = st.soldiers.find((x) => x.id === id);
+  const clean = name.trim().slice(0, NAME_MAX_LENGTH);
+  if (!s || !clean) return false;
+  s.name = clean;
+  return true;
+}
+
 export function releaseSoldier(st: GameState, id: string): number {
   const idx = st.soldiers.findIndex((s) => s.id === id);
   if (idx < 0) return 0;
@@ -133,6 +143,49 @@ export function releaseSoldier(st: GameState, id: string): number {
   st.soldiers.splice(idx, 1);
   st.gold += value;
   return value;
+}
+
+export function toggleFavorite(st: GameState, id: string): void {
+  const s = st.soldiers.find((x) => x.id === id);
+  if (s) s.favorite = !s.favorite;
+}
+
+export type SquadSort = 'hp' | 'dps' | 'level' | 'seniority' | 'favorite';
+
+export const SQUAD_SORTS: { key: SquadSort; label: string }[] = [
+  { key: 'hp', label: 'PV' },
+  { key: 'dps', label: 'DPS' },
+  { key: 'level', label: 'Niveau' },
+  { key: 'seniority', label: 'Ancienneté' },
+  { key: 'favorite', label: 'Favoris' },
+];
+
+const seniority = (s: Soldier): number => Number(s.id.slice(1));
+
+function sortValue(st: GameState, s: Soldier, key: SquadSort): number {
+  switch (key) {
+    case 'hp':
+      return computeStats(s, weaponForSoldier(s, st.weapons)).maxHp;
+    case 'dps':
+      return dps(computeStats(s, weaponForSoldier(s, st.weapons)));
+    case 'level':
+      return s.level;
+    case 'seniority':
+      return -seniority(s);
+    case 'favorite':
+      return s.favorite ? 1 : 0;
+  }
+}
+
+export function sortSquad(st: GameState, key: SquadSort, soldiers: readonly Soldier[] = st.soldiers): Soldier[] {
+  const values = new Map(soldiers.map((s) => [s, sortValue(st, s, key)]));
+  return [...soldiers].sort(
+    (a, b) =>
+      values.get(b)! - values.get(a)! ||
+      b.level - a.level ||
+      RARITY_ORDER.indexOf(b.rarity) - RARITY_ORDER.indexOf(a.rarity) ||
+      seniority(a) - seniority(b),
+  );
 }
 
 export function rollWeaponDrop(level: number, boss: boolean, rng: Rng = Math.random): WeaponDef {

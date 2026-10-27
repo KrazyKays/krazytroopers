@@ -337,6 +337,10 @@ h3 {
   text-overflow: ellipsis;
 }
 
+.fav-star {
+  color: #ffb02e;
+}
+
 .card-sub,
 .card-stats {
   font-size: 0.82rem;
@@ -426,6 +430,30 @@ h3 {
 
 .detail-head > div:last-child {
   flex: 1;
+  padding-right: 2rem;
+}
+
+.rename-form {
+  display: flex;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+}
+
+.rename-input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.3rem 0.5rem;
+  font: inherit;
+  font-weight: 700;
+  color: inherit;
+  background: var(--bg2);
+  border: 2px solid var(--line);
+  border-radius: 6px;
+}
+
+.rename-input:focus {
+  outline: none;
+  border-color: var(--rc);
 }
 
 .detail-portrait {
@@ -546,6 +574,10 @@ h3 {
 .weapon-info small {
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.weapon-item small.owner {
+  font-weight: bold;
 }
 
 .weapon-icon {
@@ -817,6 +849,29 @@ h3 {
 }
 
 .result-list li.died {
+  color: #ffb7ab;
+}
+
+.stats-table {
+  width: 100%;
+  margin: 0.6rem 0 0.2rem;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+  text-align: right;
+}
+
+.stats-table th,
+.stats-table td {
+  padding: 0.25rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.stats-table th:first-child,
+.stats-table td:first-child {
+  text-align: left;
+}
+
+.stats-table tr.died td {
   color: #ffb7ab;
 }
 

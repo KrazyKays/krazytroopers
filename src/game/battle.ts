@@ -29,12 +29,19 @@ export interface Frame {
   e: BattleEvent[];
 }
 
+export interface UnitTotals {
+  dealt: number;
+  taken: number;
+  healed: number;
+}
+
 export interface BattleResult {
   winner: Team | 'timeout';
   frames: Frame[];
   ticks: number;
   deadIds: string[];
   kills: Record<string, number>;
+  totals: Record<string, UnitTotals>;
 }
 
 function formation(n: number, team: Team): { x: number; y: number }[] {
@@ -60,6 +67,9 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
   const cd = new Float64Array(n);
   const secondWindUsed = new Array<boolean>(n).fill(false);
   const killCount = new Array<number>(n).fill(0);
+  const totalDealt = new Float64Array(n);
+  const totalTaken = new Float64Array(n);
+  const totalHealed = new Float64Array(n);
 
   for (const team of ['ally', 'enemy'] as Team[]) {
     const idx = units.map((u, i) => (u.team === team ? i : -1)).filter((i) => i >= 0);
@@ -106,10 +116,18 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
     const events: BattleEvent[] = [];
     shuffle(rng, order);
 
+    const heal = (target: number, amount: number): void => {
+      const before = hp[target];
+      hp[target] = Math.min(units[target].stats.maxHp, before + amount);
+      totalHealed[target] += hp[target] - before;
+    };
+
     const hurt = (target: number, dmg: number, source: number): number => {
       const T = units[target].stats;
       const real = (dmg * 100) / (100 + T.armor);
       hp[target] -= real;
+      totalDealt[source] += real;
+      totalTaken[target] += real;
       if (hp[target] <= 0) {
         if (T.secondWind && !secondWindUsed[target]) {
           secondWindUsed[target] = true;
@@ -126,7 +144,7 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
     for (const i of order) {
       if (!alive(i)) continue;
       const S = units[i].stats;
-      if (S.regen > 0) hp[i] = Math.min(S.maxHp, hp[i] + S.regen * S.maxHp * DT);
+      if (S.regen > 0) heal(i, S.regen * S.maxHp * DT);
       cd[i] -= DT;
       const t = nearestEnemy(i);
       if (t < 0) continue;
@@ -147,7 +165,7 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
         if (crit) dmg *= 2;
         const dealt = hurt(t, dmg, i);
         events.push({ t: 'hit', a: i, b: t, dmg: Math.round(dealt), crit, ranged: S.ranged, splash: false });
-        if (S.lifesteal > 0) hp[i] = Math.min(S.maxHp, hp[i] + dealt * S.lifesteal);
+        if (S.lifesteal > 0) heal(i, dealt * S.lifesteal);
         if (S.aoe > 0) {
           for (let j = 0; j < n; j++) {
             if (j === t || units[j].team === units[i].team || !alive(j)) continue;
@@ -207,11 +225,13 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
 
   const deadIds: string[] = [];
   const kills: Record<string, number> = {};
+  const totals: Record<string, UnitTotals> = {};
   for (let i = 0; i < n; i++) {
     const u = units[i];
+    totals[u.id] = { dealt: totalDealt[i], taken: totalTaken[i], healed: totalHealed[i] };
     if (u.team !== 'ally') continue;
     if (!alive(i)) deadIds.push(u.id);
     kills[u.id] = killCount[i];
   }
-  return { winner, frames, ticks, deadIds, kills };
+  return { winner, frames, ticks, deadIds, kills, totals };
 }

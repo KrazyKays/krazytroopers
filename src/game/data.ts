@@ -9,6 +9,7 @@ export const START_GOLD = 500;
 export const MAX_LEVEL = 30;
 export const UPGRADE_PICKS = 3;
 export const UPGRADE_CHOICES = 3;
+export const PICK_EVERY_LEVELS = 5;
 
 export interface RarityInfo {
   label: string;
