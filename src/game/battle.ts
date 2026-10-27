@@ -20,6 +20,7 @@ export interface BattleUnit {
 export type BattleEvent =
   | { t: 'hit'; a: number; b: number; dmg: number; crit: boolean; ranged: boolean; splash: boolean }
   | { t: 'miss'; a: number; b: number; ranged: boolean }
+  | { t: 'blast'; a: number; b: number; r: number }
   | { t: 'die'; i: number }
   | { t: 'save'; i: number };
 
@@ -167,6 +168,7 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
         events.push({ t: 'hit', a: i, b: t, dmg: Math.round(dealt), crit, ranged: S.ranged, splash: false });
         if (S.lifesteal > 0) heal(i, dealt * S.lifesteal);
         if (S.aoe > 0) {
+          events.push({ t: 'blast', a: i, b: t, r: S.aoe });
           for (let j = 0; j < n; j++) {
             if (j === t || units[j].team === units[i].team || !alive(j)) continue;
             if (Math.hypot(x[j] - x[t], y[j] - y[t]) <= S.aoe) {

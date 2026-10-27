@@ -52,6 +52,10 @@ export const WEAPONS: WeaponDef[] = [
   { id: 'minigun', name: 'Minigun', rarity: 'legendary', damage: 12, range: 200, cooldown: 0.2, aoe: 0, shape: 'minigun', color: '#ffb02e', droppable: true },
   { id: 'railgun', name: 'Railgun', rarity: 'legendary', damage: 150, range: 450, cooldown: 3, aoe: 0, shape: 'railgun', color: '#3fe0ff', droppable: true },
   { id: 'katana', name: 'Katana plasma', rarity: 'legendary', damage: 45, range: 30, cooldown: 0.8, aoe: 25, shape: 'katana', color: '#ff4fd8', droppable: true },
+  { id: 'buckler', name: 'Bouclier de fortune', rarity: 'common', damage: 7, range: 26, cooldown: 0.8, aoe: 0, armor: 8, shape: 'shield', color: '#8a6a4a', droppable: true },
+  { id: 'riot', name: 'Bouclier anti-émeute', rarity: 'rare', damage: 12, range: 26, cooldown: 0.9, aoe: 0, armor: 16, shape: 'shield', color: '#3d6e8f', droppable: true },
+  { id: 'tower', name: 'Bouclier blindé', rarity: 'epic', damage: 20, range: 28, cooldown: 1.1, aoe: 0, armor: 28, shape: 'shield', color: '#56654a', droppable: true },
+  { id: 'aegis', name: 'Égide', rarity: 'legendary', damage: 34, range: 30, cooldown: 1, aoe: 25, armor: 45, shape: 'shield', color: '#ffd45e', droppable: true },
 ];
 
 export const WEAPONS_BY_ID: Record<string, WeaponDef> = Object.fromEntries(WEAPONS.map((w) => [w.id, w]));

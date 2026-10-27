@@ -338,6 +338,17 @@ h3 {
   color: var(--muted);
 }
 
+.card-sub {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.card-sub .title-tag {
+  margin-left: 0;
+}
+
 .rarity-tag {
   font-weight: 700;
 }
@@ -833,6 +844,29 @@ h3 {
   transform: translate(-50%, -50%);
   box-shadow: 0 0 6px #ffcf3a;
   pointer-events: none;
+}
+
+.blast {
+  position: absolute;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 2px dashed rgba(255, 170, 60, 0.95);
+  background: radial-gradient(circle, rgba(255, 140, 40, 0.45), rgba(255, 120, 30, 0.18) 70%, rgba(255, 120, 30, 0.05));
+  box-shadow: 0 0 10px rgba(255, 150, 50, 0.6);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: blast-pulse 600ms ease-out forwards;
+}
+
+@keyframes blast-pulse {
+  from {
+    opacity: 1;
+    scale: 0.4;
+  }
+  to {
+    opacity: 0;
+    scale: 1;
+  }
 }
 
 .floater {

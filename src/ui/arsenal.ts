@@ -106,7 +106,7 @@ export function renderArsenal(): HTMLElement {
                 'div',
                 { class: 'weapon-info' },
                 h('b', { style: `color:${info.color}` }, def.name),
-                h('small', null, `${info.label} · ${fmt(def.damage)} dégâts · portée ${fmt(def.range)} · ${fmt(def.cooldown, 2)} s${def.aoe ? ` · zone ${def.aoe}` : ''}`),
+                h('small', null, `${info.label} · ${fmt(def.damage)} dégâts · portée ${fmt(def.range)} · ${fmt(def.cooldown, 2)} s${def.aoe ? ` · zone ${def.aoe}` : ''}${def.armor ? ` · armure +${def.armor}` : ''}`),
                 h('small', { class: 'muted' }, owner ? `Équipée par ${owner}` : 'Disponible'),
               ),
               h(

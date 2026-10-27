@@ -35,7 +35,7 @@ export function computeStats(s: Soldier, weapon: WeaponDef): CombatStats {
     range: weapon.range * (1 + m.rangePct),
     cooldown: Math.max(0.2, weapon.cooldown * (1 + Math.max(-0.5, m.cdPct))),
     speed: Math.max(30, BASE_SPEED * s.speedRoll * (1 + m.speedPct)),
-    armor: m.armor,
+    armor: m.armor + (weapon.armor ?? 0),
     crit: Math.min(0.75, 0.05 + m.crit),
     dodge: Math.min(0.5, 0.03 + m.dodge),
     lifesteal: m.lifesteal,

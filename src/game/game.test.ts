@@ -269,3 +269,14 @@ describe('entraînement et campagne', () => {
     expect(launchBattle(st, { mode: 'campaign', squad: [fallen.id], level: 10 }).ok).toBe(false);
   });
 });
+
+describe('boucliers', () => {
+  it('apportent leur armure en plus de celle du soldat, au corps à corps', () => {
+    const s = stateWithSoldiers(1, 1).soldiers[0];
+    const bare = computeStats(s, WEAPONS_BY_ID.knife);
+    const shielded = computeStats(s, WEAPONS_BY_ID.aegis);
+    expect(bare.armor).toBe(0);
+    expect(shielded.armor).toBe(WEAPONS_BY_ID.aegis.armor);
+    expect(shielded.ranged).toBe(false);
+  });
+});

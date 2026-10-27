@@ -59,6 +59,12 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
     setTimeout(() => p.remove(), 120 / speed);
   }
 
+  function blast(x: number, y: number, r: number): void {
+    const zone = h('div', { class: 'blast', style: `${pos(x, y)};width:${((r * 2) / ARENA_W) * 100}%;animation-duration:${600 / speed}ms` });
+    arena.prepend(zone);
+    setTimeout(() => zone.remove(), 600 / speed);
+  }
+
   function applyEvents(frame: Frame): void {
     let shown = 0;
     for (const ev of frame.e as BattleEvent[]) {
@@ -82,6 +88,8 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
           const ally = units[ev.b].team === 'ally';
           floater(bx, by, ev.crit ? `${ev.dmg}!` : String(ev.dmg), `${ally ? 'dmg-ally' : 'dmg-enemy'}${ev.crit ? ' crit' : ''}`);
         }
+      } else if (ev.t === 'blast') {
+        blast(frame.p[ev.b * 3], frame.p[ev.b * 3 + 1], ev.r);
       } else if (ev.t === 'miss') {
         floater(frame.p[ev.b * 3], frame.p[ev.b * 3 + 1], 'Raté', 'miss');
       } else if (ev.t === 'save') {

@@ -66,7 +66,8 @@ export type WeaponShape =
   | 'launcher'
   | 'flame'
   | 'minigun'
-  | 'railgun';
+  | 'railgun'
+  | 'shield';
 
 export interface WeaponDef {
   id: string;
@@ -76,6 +77,8 @@ export interface WeaponDef {
   range: number;
   cooldown: number;
   aoe: number;
+  /** Armure apportée par l'arme en plus des stats du soldat (boucliers). */
+  armor?: number;
   shape: WeaponShape;
   color: string;
   droppable: boolean;
