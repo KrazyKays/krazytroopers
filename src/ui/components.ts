@@ -35,9 +35,11 @@ export function xpBar(s: Soldier): HTMLElement {
   );
 }
 
-export function statusPill(s: Soldier, weapon: WeaponDef): HTMLElement {
-  if (s.picksLeft > 0) return h('span', { class: 'pill pill-pick' }, `${s.picksLeft} amélioration${s.picksLeft > 1 ? 's' : ''} à choisir`);
-  return h('span', { class: 'pill' }, weapon.name);
+// L'arme équipée reste visible même quand des améliorations sont à choisir
+export function statusPills(s: Soldier, weapon: WeaponDef): HTMLElement[] {
+  const weaponPill = h('span', { class: 'pill', style: `color:${RARITIES[weapon.rarity].color};border-color:${RARITIES[weapon.rarity].color}` }, weapon.name);
+  if (s.picksLeft > 0) return [h('span', { class: 'pill pill-pick' }, `${s.picksLeft} amélioration${s.picksLeft > 1 ? 's' : ''} à choisir`), weaponPill];
+  return [weaponPill];
 }
 
 export function soldierCard(st: GameState, s: Soldier, opts: { onclick?: () => void; selected?: boolean; disabled?: boolean } = {}): HTMLElement {
@@ -58,7 +60,7 @@ export function soldierCard(st: GameState, s: Soldier, opts: { onclick?: () => v
       h('div', { class: 'card-sub' }, rarityTag(s.rarity), ` · Niv. ${s.level}`, titleTags(s)),
       xpBar(s),
       h('div', { class: 'card-stats' }, `PV ${fmt(stats.maxHp)} · DPS ${fmt(dps(stats), 1)} · Entraînements ${s.trainingsLeft}/${TRAINING_PER_SOLDIER}`),
-      statusPill(s, weapon),
+      statusPills(s, weapon),
     ),
   );
 }

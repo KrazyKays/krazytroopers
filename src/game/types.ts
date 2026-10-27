@@ -34,7 +34,7 @@ export interface WeaponItem {
   defId: string;
 }
 
-export const BATTLE_SPEEDS = [1, 2, 4] as const;
+export const BATTLE_SPEEDS = [0.5, 1, 2, 4] as const;
 export type BattleSpeed = (typeof BATTLE_SPEEDS)[number];
 
 export interface GameState {

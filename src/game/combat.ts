@@ -86,9 +86,8 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   const soldiers: SoldierReport[] = squad.map((s) => {
     const died = result.deadIds.includes(s.id);
     const gained = died ? 0 : Math.round(xp * (1 + aggregateMods(s.upgrades).xpPct));
-    const prevLevel = s.level;
     const levelsGained = addXp(s, gained);
-    grantLevelPicks(s, prevLevel);
+    grantLevelPicks(s);
     const kills = result.kills[s.id] ?? 0;
     const { dealt, taken, healed } = result.totals[s.id];
     s.kills += kills;

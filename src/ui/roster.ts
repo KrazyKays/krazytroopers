@@ -1,12 +1,35 @@
 import { LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PICK_EVERY_LEVELS, RARITIES, RARITY_ORDER, UPGRADES_BY_ID, WEAPONS_BY_ID, SQUAD_MAX } from '../game/data';
-import { equipWeapon, legionOfHonor, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, renameSoldier, sortSquad, toggleFavorite } from '../game/roster';
-import { getState, mutate } from '../game/state';
+import { equipWeapon, legionOfHonor, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite } from '../game/roster';
+import { getState, mutate, refresh } from '../game/state';
 import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
-import type { Soldier } from '../game/types';
+import type { GameState, Rarity, Soldier } from '../game/types';
 import { h } from './dom';
 import { fmt, getSquadSort, openModal, rarityTag, sortBar, soldierCard, soldierSprite, titleTags, toast, weaponIcon, xpBar } from './components';
 
 const legendIds = new Set(LEGEND_UPGRADES.map((u) => u.id));
+
+const RARITY_PLURAL: Record<Rarity, string> = { common: 'communs', rare: 'rares', epic: 'épiques', legendary: 'légendaires' };
+
+// Sélection multiple pour renvoyer des soldats (le renvoi rapporte de l'or)
+const selected = new Set<string>();
+let selectMode = false;
+
+// Les favoris ne sont jamais renvoyés par lot de rareté
+function releasableByRarity(st: GameState, rarity: Rarity): Soldier[] {
+  return st.soldiers.filter((s) => s.rarity === rarity && !s.favorite);
+}
+
+function releaseSoldierList(list: Soldier[], label: string): void {
+  if (list.length === 0) return;
+  const gold = list.reduce((sum, s) => sum + RARITIES[s.rarity].releaseValue, 0);
+  const favorites = list.filter((s) => s.favorite).length;
+  const warning = favorites ? ` Dont ${favorites} favori${favorites > 1 ? 's' : ''}.` : '';
+  if (!confirm(`${label} : renvoyer ${list.length} soldat${list.length > 1 ? 's' : ''} pour ${fmt(gold)} or ?${warning}`)) return;
+  const ids = list.map((s) => s.id);
+  const earned = mutate((st) => releaseSoldiers(st, ids));
+  for (const id of ids) selected.delete(id);
+  toast(`${list.length} soldat${list.length > 1 ? 's' : ''} ${list.length > 1 ? 'ont' : 'a'} quitté l'escouade (+${fmt(earned)} or).`);
+}
 
 export function renderRoster(): HTMLElement {
   const st = getState();
@@ -18,6 +41,9 @@ export function renderRoster(): HTMLElement {
       h('p', null, "Rendez-vous dans l'onglet « Recruter » pour tirer vos premiers soldats."),
     );
   }
+  const ids = new Set(st.soldiers.map((s) => s.id));
+  for (const id of [...selected]) if (!ids.has(id)) selected.delete(id);
+  const picked = st.soldiers.filter((s) => selected.has(s.id));
   const pending = st.soldiers.reduce((n, s) => n + s.picksLeft, 0);
   return h(
     'section',
@@ -25,7 +51,64 @@ export function renderRoster(): HTMLElement {
     h('div', { class: 'section-head' }, h('h2', null, `Escouade (${st.soldiers.length})`), pending > 0 && h('span', { class: 'pill pill-pick' }, `${pending} amélioration${pending > 1 ? 's' : ''} en attente`)),
     h('p', { class: 'muted' }, `Cliquez sur un soldat pour choisir ses améliorations et gérer son équipement. Une nouvelle amélioration est débloquée tous les ${PICK_EVERY_LEVELS} niveaux, dans la limite de ${MAX_UPGRADES}. Vous pouvez engager ${SQUAD_MAX} soldats par combat.`),
     sortBar(),
-    h('div', { class: 'grid' }, sortSquad(st, getSquadSort()).map((s) => soldierCard(st, s, { onclick: () => openSoldier(s.id) }))),
+    h(
+      'div',
+      { class: 'bulk-bar' },
+      h(
+        'button',
+        {
+          class: `btn btn-small${selectMode ? ' active' : ''}`,
+          onclick: () => {
+            selectMode = !selectMode;
+            selected.clear();
+            refresh();
+          },
+        },
+        selectMode ? 'Terminer la sélection' : 'Sélection multiple',
+      ),
+      h('span', { class: 'muted small' }, 'Renvoi par rareté (hors favoris) :'),
+      RARITY_ORDER.map((r) => {
+        const list = releasableByRarity(st, r);
+        return h(
+          'button',
+          { class: 'btn btn-small', disabled: list.length === 0, onclick: () => releaseSoldierList(list, `Soldats ${RARITY_PLURAL[r]}`) },
+          `Renvoyer les ${RARITY_PLURAL[r]} (${list.length})`,
+        );
+      }),
+    ),
+    selectMode &&
+      h(
+        'div',
+        { class: 'section-head' },
+        h('b', null, `${picked.length} sélectionné${picked.length > 1 ? 's' : ''}`),
+        h(
+          'div',
+          { class: 'row' },
+          h('button', { class: 'btn btn-small', onclick: () => { for (const s of st.soldiers) selected.add(s.id); refresh(); } }, 'Tout sélectionner'),
+          h('button', { class: 'btn btn-small', onclick: () => { selected.clear(); refresh(); } }, 'Vider'),
+          h(
+            'button',
+            { class: 'btn btn-small btn-danger', disabled: picked.length === 0, onclick: () => releaseSoldierList(picked, 'Sélection') },
+            `Renvoyer la sélection (+${fmt(picked.reduce((sum, s) => sum + RARITIES[s.rarity].releaseValue, 0))} or)`,
+          ),
+        ),
+      ),
+    h(
+      'div',
+      { class: 'grid' },
+      sortSquad(st, getSquadSort()).map((s) =>
+        soldierCard(st, s, {
+          selected: selectMode && selected.has(s.id),
+          onclick: selectMode
+            ? () => {
+                if (selected.has(s.id)) selected.delete(s.id);
+                else selected.add(s.id);
+                refresh();
+              }
+            : () => openSoldier(s.id),
+        }),
+      ),
+    ),
   );
 }
 

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { simulate } from './battle';
 import { launchBattle } from './combat';
-import { LEGEND_UPGRADES, LEGION_PICKS, MAX_LEVEL, MAX_UPGRADES, PITY_LIMIT, PULL_COST, START_FREE_PULLS, START_GOLD, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADE_PICKS, UPGRADES, WEAPONS_BY_ID } from './data';
+import { LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PITY_LIMIT, PULL_COST, START_FREE_PULLS, START_GOLD, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADE_PICKS, UPGRADES, WEAPONS_BY_ID } from './data';
 import { buildCampaignEnemies } from './enemies';
 import { mulberry32 } from './rng';
-import { createSoldier, equipWeapon, grantLevelPicks, legionOfHonor, pickUpgrade, recruit, releaseSoldier, sellWeapon, sortSquad, toggleFavorite } from './roster';
+import { createSoldier, equipWeapon, grantLevelPicks, legionOfHonor, pickUpgrade, recruit, releaseSoldier, releaseSoldiers, sellWeapon, sellWeapons, sortSquad, toggleFavorite } from './roster';
 import { createInitialState } from './state';
 import { addXp, computeStats } from './stats';
 import { soldierLook } from './look';
@@ -93,7 +93,7 @@ describe('recrutement', () => {
 
     s.picksLeft = 0;
     s.level = 5;
-    grantLevelPicks(s, 4);
+    grantLevelPicks(s);
     expect(s.picksLeft).toBe(1);
     expect(s.upgradeChoices).toHaveLength(UPGRADE_CHOICES);
   });
@@ -114,6 +114,25 @@ describe('arsenal', () => {
     expect(st.gold).toBeGreaterThan(gold);
     expect(b.weaponUid).toBeNull();
     expect(releaseSoldier(st, a.id)).toBeGreaterThan(0);
+    expect(st.soldiers).toHaveLength(1);
+  });
+
+  it('vend plusieurs armes en une seule opération', () => {
+    const st = stateWithSoldiers(1);
+    const count = st.weapons.length;
+    const [w1, w2] = st.weapons;
+    const gold = st.gold;
+    const earned = sellWeapons(st, [w1.uid, w2.uid]);
+    expect(earned).toBeGreaterThan(0);
+    expect(st.gold).toBe(gold + earned);
+    expect(st.weapons).toHaveLength(count - 2);
+  });
+
+  it('renvoie plusieurs soldats en une seule opération', () => {
+    const st = stateWithSoldiers(3);
+    const [a, b] = st.soldiers;
+    const earned = releaseSoldiers(st, [a.id, b.id]);
+    expect(earned).toBeGreaterThan(0);
     expect(st.soldiers).toHaveLength(1);
   });
 });
@@ -161,11 +180,33 @@ describe('titres et légion d’honneur', () => {
     expect(s.upgrades).toEqual(['vitality']);
     expect(s.level).toBe(1);
     expect(s.xp).toBe(0);
-    expect(s.picksLeft).toBe(LEGION_PICKS);
+    expect(s.picksLeft).toBe(UPGRADE_PICKS - 1);
     expect(s.trainingsLeft).toBe(TRAINING_PER_SOLDIER);
     expect(s.upgradeChoices).toHaveLength(UPGRADE_CHOICES);
     expect(s.upgradeChoices!.every((id) => LEGEND_UPGRADES.some((u) => u.id === id))).toBe(true);
     expect(s.titles).toEqual(['legende', 'legion']);
+  });
+
+  it('rattrape la courbe après la légion selon le nombre de compétences gardées', () => {
+    for (const [kept, picks] of [[0, 3], [2, 1], [3, 0], [5, 0]] as const) {
+      const st = stateWithSoldiers(1, MAX_LEVEL);
+      const [s] = st.soldiers;
+      s.upgrades = UPGRADES.slice(0, kept).map((u) => u.id);
+      s.picksLeft = 0;
+      expect(legionOfHonor(st, s.id, [])).toBe(true);
+      expect(s.picksLeft).toBe(picks);
+    }
+  });
+
+  it('ne dépasse jamais le plafond de compétences, légion ou non', () => {
+    const st = stateWithSoldiers(1, MAX_LEVEL);
+    const [s] = st.soldiers;
+    s.upgrades = UPGRADES.slice(0, MAX_UPGRADES).map((u) => u.id);
+    s.picksLeft = 0;
+    expect(legionOfHonor(st, s.id, [])).toBe(true);
+    s.level = MAX_LEVEL;
+    grantLevelPicks(s);
+    expect(s.upgrades.length + s.picksLeft).toBeLessThanOrEqual(MAX_UPGRADES);
   });
 
   it('refuse la légion avant le niveau max ou avec des améliorations en attente', () => {
@@ -185,7 +226,7 @@ describe('titres et légion d’honneur', () => {
     s.picksLeft = 0;
     s.upgradeChoices = null;
     s.level = 5;
-    grantLevelPicks(s, 4);
+    grantLevelPicks(s);
     expect(s.picksLeft).toBe(0);
     expect(s.upgradeChoices).toBeNull();
   });

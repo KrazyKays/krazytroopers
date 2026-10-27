@@ -11,8 +11,7 @@ export const MAX_LEVEL = 30;
 export const UPGRADE_PICKS = 3;
 export const UPGRADE_CHOICES = 3;
 export const PICK_EVERY_LEVELS = 5;
-export const MAX_UPGRADES = 10;
-export const LEGION_PICKS = 1;
+export const MAX_UPGRADES = 9;
 
 export const TITLES: Record<TitleId, { label: string; desc: string }> = {
   legende: { label: 'Légende', desc: 'Atteint le niveau maximum' },

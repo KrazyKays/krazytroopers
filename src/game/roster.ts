@@ -3,7 +3,6 @@ import {
   HAIR_COLORS,
   HELMET_COLORS,
   LEGEND_UPGRADES,
-  LEGION_PICKS,
   MAX_LEVEL,
   MAX_UPGRADES,
   NICKNAMES,
@@ -106,13 +105,16 @@ export function pickUpgrade(st: GameState, soldierId: string, upgradeId: string)
   return true;
 }
 
-export function grantLevelPicks(s: Soldier, fromLevel: number): void {
-  const milestones = Math.floor(s.level / PICK_EVERY_LEVELS) - Math.floor(fromLevel / PICK_EVERY_LEVELS);
-  const room = MAX_UPGRADES - s.upgrades.length - s.picksLeft;
-  const gained = Math.min(milestones, room);
-  if (gained <= 0) return;
-  s.picksLeft += gained;
-  if (!s.upgradeChoices) s.upgradeChoices = rollUpgradeChoices(Math.random, s);
+// Nombre total de choix auquel un soldat a droit à son niveau : 3 au niveau 1, puis +1 tous les PICK_EVERY_LEVELS niveaux.
+export function entitledPicks(level: number): number {
+  return Math.min(MAX_UPGRADES, UPGRADE_PICKS + Math.floor(level / PICK_EVERY_LEVELS));
+}
+
+// Recalcule les choix en attente pour que le total (choisis + en attente) suive la courbe du niveau.
+export function grantLevelPicks(s: Soldier): void {
+  s.picksLeft = Math.max(0, entitledPicks(s.level) - s.upgrades.length);
+  if (s.picksLeft === 0) s.upgradeChoices = null;
+  else if (!s.upgradeChoices) s.upgradeChoices = rollUpgradeChoices(Math.random, s);
 }
 
 export function legionOfHonor(st: GameState, soldierId: string, removed: readonly string[]): boolean {
@@ -122,8 +124,8 @@ export function legionOfHonor(st: GameState, soldierId: string, removed: readonl
   s.upgrades = s.upgrades.filter((id) => !removed.includes(id));
   s.level = 1;
   s.xp = 0;
-  s.picksLeft = Math.min(LEGION_PICKS, MAX_UPGRADES - s.upgrades.length);
-  s.upgradeChoices = s.picksLeft > 0 ? rollUpgradeChoices(Math.random, s) : null;
+  s.upgradeChoices = null;
+  grantLevelPicks(s);
   s.trainingsLeft += TRAINING_PER_SOLDIER;
   if (!s.titles.includes('legion')) s.titles.push('legion');
   return true;
@@ -150,6 +152,10 @@ export function sellWeapon(st: GameState, uid: string): number {
   return value;
 }
 
+export function sellWeapons(st: GameState, uids: readonly string[]): number {
+  return uids.reduce((sum, uid) => sum + sellWeapon(st, uid), 0);
+}
+
 export const NAME_MAX_LENGTH = 24;
 
 export function renameSoldier(st: GameState, id: string, name: string): boolean {
@@ -167,6 +173,10 @@ export function releaseSoldier(st: GameState, id: string): number {
   st.soldiers.splice(idx, 1);
   st.gold += value;
   return value;
+}
+
+export function releaseSoldiers(st: GameState, ids: readonly string[]): number {
+  return ids.reduce((sum, id) => sum + releaseSoldier(st, id), 0);
 }
 
 export function toggleFavorite(st: GameState, id: string): void {
