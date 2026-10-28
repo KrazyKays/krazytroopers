@@ -41,6 +41,8 @@ export interface GameState {
   version: 1;
   gold: number;
   pity: number;
+  /** Tirages d'armes depuis la dernière arme Épique ou mieux. */
+  weaponPity: number;
   totalPulls: number;
   soldiers: Soldier[];
   weapons: WeaponItem[];

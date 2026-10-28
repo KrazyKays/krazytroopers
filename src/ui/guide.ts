@@ -1,4 +1,4 @@
-import { PULL_COST } from '../game/data';
+import { PULL_COST, WEAPON_PULL_COST } from '../game/data';
 import { sortSquad } from '../game/roster';
 import { getState, mutate } from '../game/state';
 import type { GameState } from '../game/types';
@@ -48,6 +48,14 @@ function nextStep(st: GameState): Step | null {
   }
   if (st.campaignLevel === 0) {
     return { title: 'Lancez la campagne', text: 'Le niveau 1 de la campagne rapporte une arme garantie. Vérifiez les chances de victoire avant de lancer.', action: { label: 'Campagne', run: () => openCombat('campaign') }, tab: 'combat' };
+  }
+  if (unarmed.length > 0 && free === 0 && st.gold >= WEAPON_PULL_COST) {
+    return {
+      title: 'Achetez des armes',
+      text: `${unarmed.length} soldat${unarmed.length > 1 ? 's se battent' : ' se bat'} à mains nues : l'armurerie vend des armes au hasard.`,
+      action: { label: 'Armurerie', run: () => goTo('recruit') },
+      tab: 'recruit',
+    };
   }
   if (st.freePulls > 0) {
     return { title: 'Tirages gratuits', text: `Il vous reste ${st.freePulls} tirage${st.freePulls > 1 ? 's' : ''} gratuit${st.freePulls > 1 ? 's' : ''}.`, action: { label: 'Recruter', run: () => goTo('recruit') }, tab: 'recruit' };

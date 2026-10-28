@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { simulate } from './battle';
 import { DEFAULT_SIMULATION, estimateBattle, estimateSimulation, launchBattle, launchSimulation } from './combat';
-import { AUTO_PICK_KILLS, LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PITY_LIMIT, PULL_COST, START_FREE_PULLS, START_GOLD, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADE_PICKS, UPGRADES, WEAPONS_BY_ID } from './data';
+import { AUTO_PICK_KILLS, LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PITY_LIMIT, PULL_COST, START_FREE_PULLS, START_GOLD, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADE_PICKS, UPGRADES, WEAPON_PULL10_COST, WEAPON_PULL_COST, WEAPONS_BY_ID } from './data';
 import { buildCampaignEnemies, SIM_MAX_ENEMIES } from './enemies';
 import { mulberry32 } from './rng';
-import { autoPickAll, autoPickUnlocked, createSoldier, entitledPicks, equipWeapon, grantLevelPicks, legionOfHonor, pickUpgrade, recruit, releaseSoldier, releaseSoldiers, sellWeapon, sellWeapons, sortSquad, toggleFavorite } from './roster';
+import { autoPickAll, autoPickUnlocked, buyWeapons, createSoldier, entitledPicks, equipWeapon, grantLevelPicks, legionOfHonor, pickUpgrade, recruit, releaseSoldier, releaseSoldiers, sellWeapon, sellWeapons, sortSquad, toggleFavorite } from './roster';
 import { createInitialState } from './state';
 import { addXp, computeStats } from './stats';
 import { soldierLook } from './look';
@@ -75,6 +75,30 @@ describe('recrutement', () => {
     }
     expect(rarities.slice(0, PITY_LIMIT - 1).every((r) => r === 'common')).toBe(true);
     expect(['epic', 'legendary']).toContain(rarities[PITY_LIMIT - 1]);
+  });
+
+  it("vend des armes à l'armurerie, avec sa propre garantie", () => {
+    const st = createInitialState();
+    const owned = st.weapons.length;
+    st.gold = WEAPON_PULL_COST + WEAPON_PULL10_COST - 1;
+    const one = buyWeapons(st, 'one');
+    expect(one.ok && one.weapons).toHaveLength(1);
+    expect(buyWeapons(st, 'ten').ok).toBe(false);
+    expect(st.gold).toBe(WEAPON_PULL10_COST - 1);
+    expect(st.weapons).toHaveLength(owned + 1);
+
+    st.gold = 100000;
+    st.weaponPity = 0;
+    const rarities: string[] = [];
+    for (let i = 0; i < PITY_LIMIT; i++) {
+      const r = buyWeapons(st, 'one', () => 0);
+      if (r.ok) rarities.push(WEAPONS_BY_ID[r.weapons[0].defId].rarity);
+    }
+    expect(rarities.slice(0, PITY_LIMIT - 1).every((r) => r === 'common')).toBe(true);
+    expect(['epic', 'legendary']).toContain(rarities[PITY_LIMIT - 1]);
+    expect(st.weaponPity).toBe(0);
+    expect(st.pity).toBe(0); // la garantie du recrutement n'est pas touchée
+    expect(rarities.every((r, i) => WEAPONS_BY_ID[st.weapons[owned + 1 + i].defId].rarity === r)).toBe(true);
   });
 
   it('propose 3 améliorations à choisir 3 fois, et les débloque tous les 5 niveaux', () => {

@@ -8,6 +8,7 @@ export function createInitialState(): GameState {
     version: 1,
     gold: START_GOLD,
     pity: 0,
+    weaponPity: 0,
     totalPulls: 0,
     soldiers: [],
     weapons: [],
@@ -44,6 +45,7 @@ export function parseSave(raw: string): GameState | null {
           battleSpeed: data.battleSpeed ?? 1,
           hideGuide: !!data.hideGuide,
           freePulls: typeof data.freePulls === 'number' ? data.freePulls : 0,
+          weaponPity: typeof data.weaponPity === 'number' ? data.weaponPity : 0,
           // Sauvegardes antérieures au compteur global : on reprend les éliminations encore connues des soldats.
           stats: {
             ...data.stats,

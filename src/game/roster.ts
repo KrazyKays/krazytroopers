@@ -20,11 +20,13 @@ import {
   UPGRADE_CHOICES,
   UPGRADE_PICKS,
   WEAPONS,
+  WEAPON_PULL10_COST,
+  WEAPON_PULL_COST,
 } from './data';
 import { nextUid } from './state';
 import { computeStats, dps, weaponForSoldier } from './stats';
 import { pick, range, shuffle, weightedPick, type Rng } from './rng';
-import type { GameState, Rarity, Soldier, UpgradeDef, WeaponDef } from './types';
+import type { GameState, Rarity, Soldier, UpgradeDef, WeaponDef, WeaponItem } from './types';
 
 export function rollRarity(rng: Rng, pity: number): Rarity {
   if (pity >= PITY_LIMIT - 1) {
@@ -95,6 +97,24 @@ export function recruit(st: GameState, mode: 'free' | 'one' | 'ten', rng: Rng = 
     soldiers.push(s);
   }
   return { ok: true, soldiers, free: mode === 'free' };
+}
+
+export type WeaponPullResult = { ok: true; weapons: WeaponItem[] } | { ok: false; error: string };
+
+// Armurerie : même tirage que le recrutement (taux et garantie), avec un compteur de garantie distinct
+export function buyWeapons(st: GameState, mode: 'one' | 'ten', rng: Rng = Math.random): WeaponPullResult {
+  const cost = mode === 'ten' ? WEAPON_PULL10_COST : WEAPON_PULL_COST;
+  if (st.gold < cost) return { ok: false, error: "Pas assez d'or." };
+  st.gold -= cost;
+  const weapons: WeaponItem[] = [];
+  for (let i = 0; i < (mode === 'ten' ? 10 : 1); i++) {
+    const rarity = rollRarity(rng, st.weaponPity);
+    st.weaponPity = rarity === 'epic' || rarity === 'legendary' ? 0 : st.weaponPity + 1;
+    const item = { uid: nextUid(st, 'w'), defId: weaponOfRarity(rng, rarity).id };
+    st.weapons.push(item);
+    weapons.push(item);
+  }
+  return { ok: true, weapons };
 }
 
 export function pickUpgrade(st: GameState, soldierId: string, upgradeId: string): boolean {
@@ -251,6 +271,9 @@ export function rollWeaponDrop(level: number, boss: boolean, rng: Rng = Math.ran
   ];
   let rarity = weightedPick(rng, weights.filter(([, w]) => w > 0));
   if (boss) rarity = RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, RARITY_ORDER.indexOf(rarity) + 1)];
-  const pool = WEAPONS.filter((w) => w.droppable && w.rarity === rarity);
-  return pick(rng, pool);
+  return weaponOfRarity(rng, rarity);
+}
+
+function weaponOfRarity(rng: Rng, rarity: Rarity): WeaponDef {
+  return pick(rng, WEAPONS.filter((w) => w.droppable && w.rarity === rarity));
 }

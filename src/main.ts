@@ -14,7 +14,7 @@ import { renderSettings } from './ui/settings';
 const TABS: { id: Tab; label: string; hint: string; render: () => HTMLElement }[] = [
   { id: 'roster', label: 'Escouade', hint: 'Vos soldats : améliorations et équipement', render: renderRoster },
   { id: 'combat', label: 'Combat', hint: 'Entraînement, campagne et simulation', render: renderCombat },
-  { id: 'recruit', label: 'Recruter', hint: 'Tirer de nouveaux soldats', render: renderRecruit },
+  { id: 'recruit', label: 'Recruter', hint: 'Tirer de nouveaux soldats et de nouvelles armes', render: renderRecruit },
   { id: 'arsenal', label: 'Arsenal', hint: 'Vos armes : équipées ou à vendre', render: renderArsenal },
   { id: 'settings', label: 'Infos', hint: 'Règles, statistiques et sauvegarde', render: renderSettings },
 ];

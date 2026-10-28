@@ -118,7 +118,13 @@ export function renderArsenal(): HTMLElement {
     'section',
     null,
     h('h2', null, `Arsenal (${st.weapons.length})`),
-    h('p', { class: 'muted' }, "Les armes s'obtiennent en campagne. Équipez-les avec « Équiper sur… », ou vendez les doublons pour de l'or."),
+    h(
+      'p',
+      { class: 'muted' },
+      "Les armes s'obtiennent en campagne ou à l'",
+      h('button', { class: 'link', onclick: () => goTo('recruit') }, 'armurerie'),
+      ". Équipez-les avec « Équiper sur… », ou vendez les doublons pour de l'or.",
+    ),
     unarmed > 0 &&
       free > 0 &&
       h(

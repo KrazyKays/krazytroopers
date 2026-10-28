@@ -826,15 +826,6 @@ h3 {
   margin-top: 1.2rem;
 }
 
-.reveal-grid.single {
-  grid-template-columns: minmax(240px, 320px);
-  justify-content: center;
-}
-
-.reveal {
-  animation: reveal 0.5s both;
-}
-
 @keyframes reveal {
   from {
     opacity: 0;
@@ -1784,5 +1775,664 @@ h3 {
 @media (max-width: 520px) {
   .track-nodes {
     grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+}
+
+/* ---------- Bannières de recrutement ---------- */
+
+.banners {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+  gap: 1rem;
+  margin: 1rem 0;
+}
+
+.banner {
+  --bc: var(--accent);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+  padding: 1rem;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 100% 0%, color-mix(in srgb, var(--bc) 22%, transparent), transparent 55%),
+    linear-gradient(160deg, var(--panel), var(--bg2));
+  border: 2px solid color-mix(in srgb, var(--bc) 55%, var(--line));
+  border-radius: 12px;
+  box-shadow: 0 0 24px color-mix(in srgb, var(--bc) 15%, transparent);
+}
+
+.banner::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(100deg, transparent 40%, rgba(255, 255, 255, 0.07) 50%, transparent 60%);
+  background-size: 250% 100%;
+  animation: banner-sheen 5s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes banner-sheen {
+  from {
+    background-position: 150% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+
+.banner-weapon {
+  --bc: #e5604d;
+}
+
+.banner-head {
+  display: flex;
+  gap: 0.8rem;
+  align-items: center;
+}
+
+.banner-head h3 {
+  margin: 0 0 0.15rem;
+  font-size: 1.3rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--bc);
+}
+
+.banner-head p {
+  margin: 0;
+}
+
+.banner-emblem {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  font-size: 1.7rem;
+  color: var(--bc);
+  background: radial-gradient(circle, color-mix(in srgb, var(--bc) 30%, transparent), transparent 70%);
+  border: 2px solid var(--bc);
+  border-radius: 50%;
+  text-shadow: 0 0 10px var(--bc);
+  animation: emblem-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes emblem-pulse {
+  50% {
+    box-shadow: 0 0 18px color-mix(in srgb, var(--bc, var(--accent)) 60%, transparent);
+  }
+}
+
+.banner .recruit-box {
+  margin: 0;
+}
+
+.btn-free {
+  --bc: var(--accent);
+  animation: emblem-pulse 1.6s ease-in-out infinite;
+}
+
+.rates-bar {
+  display: flex;
+  height: 18px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.rates-seg {
+  display: grid;
+  place-items: center;
+  min-width: 6px;
+  overflow: hidden;
+  background: var(--rc);
+  white-space: nowrap;
+}
+
+.rates-seg small {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #14170f;
+}
+
+.pity {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.pity-track {
+  height: 8px;
+  overflow: hidden;
+  background: var(--bg);
+  border-radius: 4px;
+}
+
+.pity-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #b46cff, #ffb02e);
+  border-radius: 4px;
+  box-shadow: 0 0 8px #b46cff;
+  transition: width 0.4s;
+}
+
+.banner-featured {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.featured-weapon {
+  flex: 1 1 70px;
+  max-width: 110px;
+  padding: 2px;
+  background: radial-gradient(circle, rgba(255, 176, 46, 0.25), transparent 70%);
+  border: 1px solid rgba(255, 176, 46, 0.5);
+  border-radius: 6px;
+}
+
+.featured-weapon .weapon-icon {
+  width: 100%;
+  height: 40px;
+  background: none;
+}
+
+/* ---------- Séquence de tirage (gacha) ---------- */
+
+.gacha {
+  --glow: transparent;
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 1.2rem 16px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: rgba(4, 6, 3, 0.94);
+  animation: gacha-in 0.25s both;
+}
+
+@keyframes gacha-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.gacha-tease {
+  --glow: var(--best);
+}
+
+.gacha-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--glow) 28%, transparent), transparent 60%);
+  pointer-events: none;
+}
+
+.gacha-tease-legendary .gacha-bg::after {
+  content: '';
+  position: absolute;
+  inset: -50%;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 176, 46, 0.12) 0deg 8deg, transparent 8deg 22deg);
+  mask-image: radial-gradient(circle, #000 10%, transparent 55%);
+  animation: spin 14s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+.gacha-title {
+  margin: 0.4rem 0 0;
+  font-size: 1.6rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--accent);
+  text-shadow: 0 0 14px color-mix(in srgb, var(--glow) 80%, transparent);
+}
+
+.gacha-mute {
+  position: fixed;
+  top: 0.6rem;
+  right: 0.8rem;
+  z-index: 2;
+  background: none;
+  border: none;
+  font-size: 1.3rem;
+  cursor: pointer;
+  opacity: 0.7;
+}
+
+.gacha-stage {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.gacha-hint {
+  color: var(--muted);
+}
+
+/* La caisse */
+
+.gacha-crate-wrap {
+  position: relative;
+  display: grid;
+  place-items: center;
+  padding: 3rem;
+}
+
+.gacha-crate-glow {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle, var(--glow), transparent 65%);
+  opacity: 0.7;
+  pointer-events: none;
+  animation: glow-pulse 0.8s ease-in-out infinite;
+}
+
+@keyframes glow-pulse {
+  50% {
+    opacity: 1;
+    transform: scale(1.08);
+  }
+}
+
+.gacha-crate {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  width: 190px;
+  height: 140px;
+  padding: 0;
+  font: inherit;
+  color: #2a1e10;
+  background:
+    linear-gradient(35deg, transparent 46%, #5a3d1e 46% 54%, transparent 54%),
+    repeating-linear-gradient(0deg, #9b6b37 0 26px, #85592c 26px 28px);
+  border: 6px solid #5a3d1e;
+  border-radius: 6px;
+  box-shadow: 0 0 30px var(--glow), inset 0 0 0 3px #b07d44;
+  cursor: pointer;
+  animation: crate-rattle 0.32s ease-in-out infinite;
+  transition: box-shadow 0.5s;
+}
+
+.gacha-crate-weapon {
+  color: #e8e6d4;
+  background:
+    linear-gradient(90deg, transparent 12%, #2c3522 12% 16%, transparent 16% 84%, #2c3522 84% 88%, transparent 88%),
+    linear-gradient(180deg, #56663f, #3e4a2d);
+  border-color: #2c3522;
+  box-shadow: 0 0 30px var(--glow), inset 0 0 0 3px #6c7d52;
+}
+
+.gacha-crate-lid {
+  position: absolute;
+  top: -16px;
+  left: -12px;
+  right: -12px;
+  height: 22px;
+  background: #7a5129;
+  border: 4px solid #5a3d1e;
+  border-radius: 5px;
+}
+
+.gacha-crate-weapon .gacha-crate-lid {
+  background: #4a5836;
+  border-color: #2c3522;
+}
+
+.gacha-crate-label {
+  padding: 0.1rem 0.5rem;
+  font-size: 1.15rem;
+  font-weight: 900;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  background: rgba(0, 0, 0, 0.18);
+  border: 2px dashed currentColor;
+}
+
+.gacha-crate-count {
+  margin-top: 0.3rem;
+  font-weight: 800;
+}
+
+.gacha-tease .gacha-crate {
+  animation-duration: 0.14s;
+}
+
+.gacha-tease-legendary .gacha-crate {
+  animation-duration: 0.09s;
+}
+
+@keyframes crate-rattle {
+  0%,
+  100% {
+    transform: rotate(0);
+  }
+  25% {
+    transform: rotate(-3deg) translateY(-2px);
+  }
+  75% {
+    transform: rotate(3deg) translateY(-1px);
+  }
+}
+
+.gacha-flash {
+  position: fixed;
+  inset: 0;
+  z-index: 3;
+  background: radial-gradient(circle, #fff, color-mix(in srgb, var(--best) 60%, #fff));
+  pointer-events: none;
+  animation: flash 0.7s ease-out forwards;
+}
+
+@keyframes flash {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+.gacha-spark {
+  position: fixed;
+  z-index: 4;
+  width: var(--sz);
+  height: var(--sz);
+  background: var(--c);
+  border-radius: 50%;
+  box-shadow: 0 0 8px var(--c);
+  pointer-events: none;
+  animation: spark var(--d) cubic-bezier(0.1, 0.8, 0.3, 1) forwards;
+}
+
+@keyframes spark {
+  from {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 1;
+  }
+  to {
+    transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) scale(0.2);
+    opacity: 0;
+  }
+}
+
+.gacha-shake .gacha-stage {
+  animation: screen-shake 0.5s;
+}
+
+@keyframes screen-shake {
+  10%,
+  50%,
+  90% {
+    transform: translate(-6px, 3px);
+  }
+  30%,
+  70% {
+    transform: translate(6px, -3px);
+  }
+}
+
+/* Les cartes */
+
+.gacha-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  gap: 0.9rem;
+  width: min(1200px, 100%);
+}
+
+.gacha-kind-weapon .gacha-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr));
+  width: min(1000px, 100%);
+}
+
+.gacha-grid.single {
+  grid-template-columns: minmax(0, 300px);
+  justify-content: center;
+}
+
+.gacha-card {
+  perspective: 1000px;
+  cursor: pointer;
+  animation: gacha-deal 0.45s calc(var(--i) * 70ms) both;
+}
+
+@keyframes gacha-deal {
+  from {
+    opacity: 0;
+    transform: translateY(60px) scale(0.6) rotate(-8deg);
+  }
+}
+
+.gacha-inner {
+  position: relative;
+  display: grid;
+  height: 100%;
+  transform-style: preserve-3d;
+  transition: transform 0.6s cubic-bezier(0.3, 1.4, 0.5, 1);
+}
+
+.gacha-card.flipped .gacha-inner {
+  transform: rotateY(180deg);
+}
+
+.gacha-back,
+.gacha-front {
+  grid-area: 1 / 1;
+  backface-visibility: hidden;
+}
+
+.gacha-back {
+  display: grid;
+  place-items: center;
+  min-height: 150px;
+  background:
+    repeating-linear-gradient(45deg, rgba(255, 255, 255, 0.03) 0 10px, transparent 10px 20px),
+    linear-gradient(160deg, #2c3524, #161a12);
+  border: 2px solid color-mix(in srgb, var(--rc) 70%, var(--line));
+  border-radius: 10px;
+  box-shadow: 0 0 10px color-mix(in srgb, var(--rc) 30%, transparent);
+  transition: box-shadow 0.6s;
+}
+
+.gacha-back-mark {
+  font-size: 3rem;
+  font-weight: 900;
+  color: color-mix(in srgb, var(--rc) 70%, var(--text));
+  text-shadow: 0 0 12px var(--rc);
+}
+
+.rarity-epic .gacha-back {
+  box-shadow: 0 0 18px color-mix(in srgb, var(--rc) 60%, transparent);
+}
+
+.rarity-legendary .gacha-back {
+  box-shadow: 0 0 26px var(--rc);
+}
+
+.gacha-card.charging .gacha-inner {
+  animation: card-charge 0.12s ease-in-out infinite;
+}
+
+.gacha-card.charging .gacha-back {
+  box-shadow: 0 0 40px 8px var(--rc);
+}
+
+@keyframes card-charge {
+  25% {
+    transform: rotate(-2deg) scale(1.04);
+  }
+  75% {
+    transform: rotate(2deg) scale(1.04);
+  }
+}
+
+.gacha-front {
+  position: relative;
+  transform: rotateY(180deg);
+  isolation: isolate;
+}
+
+.gacha-front > .card,
+.gacha-front > .weapon-card {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+  margin: 0;
+}
+
+.gacha-rays {
+  position: absolute;
+  inset: -25%;
+  z-index: 0;
+  opacity: 0;
+  background: repeating-conic-gradient(from 0deg, color-mix(in srgb, var(--rc) 45%, transparent) 0deg 10deg, transparent 10deg 30deg);
+  mask-image: radial-gradient(circle, #000 25%, transparent 65%);
+  pointer-events: none;
+}
+
+.flipped.rarity-epic .gacha-rays,
+.flipped.rarity-legendary .gacha-rays {
+  opacity: 1;
+  transition: opacity 0.4s 0.3s;
+  animation: spin 8s linear infinite;
+}
+
+.flipped.rarity-epic .gacha-rays {
+  opacity: 0.55;
+}
+
+.gacha-shine {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  border-radius: 8px;
+  pointer-events: none;
+}
+
+.gacha-shine::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -60%;
+  width: 45%;
+  background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.5), transparent);
+}
+
+.flipped:not(.rarity-common) .gacha-shine::before {
+  animation: shine 0.9s 0.45s ease-out both;
+}
+
+.flipped.rarity-legendary .gacha-shine::before {
+  animation: shine 1.6s 0.45s ease-in-out infinite;
+}
+
+@keyframes shine {
+  to {
+    left: 120%;
+  }
+}
+
+.flipped.rarity-legendary .gacha-front > .card,
+.flipped.rarity-legendary .gacha-front > .weapon-card {
+  box-shadow: 0 0 28px var(--rc);
+}
+
+.gacha-weapon {
+  position: relative;
+  align-items: center;
+  text-align: center;
+}
+
+.gacha-weapon .weapon-art {
+  width: 100%;
+}
+
+.gacha-new {
+  position: absolute;
+  top: -8px;
+  right: -6px;
+  z-index: 3;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #14170f;
+  background: var(--good);
+  border-radius: 999px;
+  box-shadow: 0 0 10px var(--good);
+  transform: rotate(8deg);
+}
+
+/* Bilan */
+
+.gacha-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.7rem;
+  padding-bottom: 0.6rem;
+}
+
+.gacha-summary {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem;
+  animation: reveal 0.4s both;
+}
+
+.gacha-count {
+  padding: 0.15rem 0.6rem;
+  font-weight: 700;
+  color: var(--rc);
+  background: color-mix(in srgb, var(--rc) 12%, transparent);
+  border: 1px solid var(--rc);
+  border-radius: 999px;
+}
+
+.gacha-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.5rem;
+  animation: reveal 0.4s 0.1s both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner::before,
+  .banner-emblem,
+  .btn-free,
+  .gacha-crate,
+  .gacha-crate-glow,
+  .gacha-card,
+  .gacha-card.charging .gacha-inner,
+  .gacha-rays,
+  .gacha-bg::after,
+  .flipped .gacha-shine::before {
+    animation: none !important;
+  }
+
+  .gacha-inner {
+    transition-duration: 0.2s;
   }
 }
