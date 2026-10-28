@@ -14,7 +14,7 @@ export function createInitialState(): GameState {
     campaignLevel: 0,
     freePulls: START_FREE_PULLS,
     nextId: 1,
-    stats: { won: 0, lost: 0, deaths: 0 },
+    stats: { won: 0, lost: 0, deaths: 0, kills: 0 },
     battleSpeed: 1,
   };
   for (const defId of START_WEAPONS) st.weapons.push({ uid: `w${st.nextId++}`, defId });
@@ -42,6 +42,11 @@ export function parseSave(raw: string): GameState | null {
           ...data,
           battleSpeed: data.battleSpeed ?? 1,
           freePulls: typeof data.freePulls === 'number' ? data.freePulls : 0,
+          // Sauvegardes antérieures au compteur global : on reprend les éliminations encore connues des soldats.
+          stats: {
+            ...data.stats,
+            kills: data.stats?.kills ?? data.soldiers.reduce((n: number, s: Soldier) => n + (s.kills ?? 0), 0),
+          },
           soldiers: data.soldiers.map((s: Soldier) => ({
             ...s,
             favorite: !!s.favorite,

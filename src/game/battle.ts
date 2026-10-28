@@ -15,6 +15,8 @@ export interface BattleUnit {
   scale: number;
   soldierId?: string;
   stats: CombatStats;
+  /** Cible factice (mode simulation) : invincible, et ses dégâts augmentent de `growth` par seconde de combat. */
+  dummy?: { growth: number };
 }
 
 export type BattleEvent =
@@ -126,6 +128,11 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
     const hurt = (target: number, dmg: number, source: number): number => {
       const T = units[target].stats;
       const real = (dmg * 100) / (100 + T.armor);
+      if (units[target].dummy) {
+        totalDealt[source] += real;
+        totalTaken[target] += real;
+        return real;
+      }
       hp[target] -= real;
       totalDealt[source] += real;
       totalTaken[target] += real;
@@ -160,7 +167,8 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
           events.push({ t: 'miss', a: i, b: t, ranged: S.ranged });
           continue;
         }
-        let dmg = S.damage * (0.9 + rng() * 0.2);
+        const dummy = units[i].dummy;
+        let dmg = (S.damage + (dummy ? dummy.growth * tick * DT : 0)) * (0.9 + rng() * 0.2);
         if (S.berserk && hp[i] < S.maxHp * 0.5) dmg *= 1.4;
         const crit = rng() < S.crit;
         if (crit) dmg *= 2;

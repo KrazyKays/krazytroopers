@@ -1,5 +1,5 @@
 ﻿import { WEAPONS_BY_ID } from './data';
-import type { BattleUnit } from './battle';
+import { ARENA_W, type BattleUnit } from './battle';
 import { mulberry32, range, weightedPick, type Rng } from './rng';
 import type { CombatStats, SpriteLook, WeaponDef } from './types';
 
@@ -88,6 +88,31 @@ export function buildTrainingEnemies(avgLevel: number, squadSize: number, rng: R
   const count = Math.max(2, squadSize);
   const m = levelPower(avgLevel) * 0.75;
   return compose(avgLevel, count, rng).map((t, i) => makeEnemy(t, WEAPONS_BY_ID[t.weapon], i, m * range(rng, 0.9, 1.1), 1, `${t.name} (cible)`));
+}
+
+/** Dégâts ajoutés à chaque seconde de combat par l'épouvantail (il part de 0). */
+export const SCARECROW_GROWTH = 0.3;
+
+export function buildScarecrow(): BattleUnit {
+  const look: SpriteLook = { skin: '#d9b56a', hair: '#8a6a2a', uniform: '#8a6a2a', helmet: '#5a4a2a', weaponId: 'fists' };
+  const stats: CombatStats = {
+    maxHp: 1,
+    damage: 0,
+    // immobile : sa portée couvre l'arène pour toujours frapper le soldat le plus proche, même à distance
+    range: ARENA_W,
+    cooldown: 1,
+    speed: 0,
+    armor: 0,
+    crit: 0,
+    dodge: 0,
+    lifesteal: 0,
+    regen: 0,
+    aoe: 0,
+    ranged: false,
+    berserk: false,
+    secondWind: false,
+  };
+  return { id: 'scarecrow', team: 'enemy', name: 'Épouvantail', look, scale: 1.2, stats, dummy: { growth: SCARECROW_GROWTH } };
 }
 
 export function previewCampaign(level: number): { count: number; boss: boolean; names: string[] } {

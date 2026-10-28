@@ -1,5 +1,5 @@
-import { LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PICK_EVERY_LEVELS, RARITIES, RARITY_ORDER, UPGRADES_BY_ID, WEAPONS_BY_ID, SQUAD_MAX } from '../game/data';
-import { equipWeapon, legionOfHonor, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite } from '../game/roster';
+import { AUTO_PICK_KILLS, LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PICK_EVERY_LEVELS, RARITIES, RARITY_ORDER, TRAINING_PER_SOLDIER, UPGRADES_BY_ID, WEAPONS_BY_ID, SQUAD_MAX } from '../game/data';
+import { autoPickAll, autoPickUnlocked, equipWeapon, legionOfHonor, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
 import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
 import type { GameState, Rarity, Soldier } from '../game/types';
@@ -17,6 +17,12 @@ let selectMode = false;
 // Les favoris ne sont jamais renvoyés par lot de rareté
 function releasableByRarity(st: GameState, rarity: Rarity): Soldier[] {
   return st.soldiers.filter((s) => s.rarity === rarity && !s.favorite);
+}
+
+function autoPickEverything(pending: number): void {
+  if (!confirm(`Choisir au hasard les ${pending} amélioration${pending > 1 ? 's' : ''} en attente de toute l'escouade ? Les choix ne pourront pas être modifiés.`)) return;
+  const picks = mutate((st) => autoPickAll(st));
+  toast(`${picks} amélioration${picks > 1 ? 's' : ''} choisie${picks > 1 ? 's' : ''} au hasard.`, 'good');
 }
 
 function releaseSoldierList(list: Soldier[], label: string): void {
@@ -75,6 +81,9 @@ export function renderRoster(): HTMLElement {
           `Renvoyer les ${RARITY_PLURAL[r]} (${list.length})`,
         );
       }),
+      autoPickUnlocked(st)
+        ? h('button', { class: 'btn btn-small', disabled: pending === 0, onclick: () => autoPickEverything(pending) }, `Choisir au hasard les améliorations en attente (${pending})`)
+        : h('span', { class: 'muted small' }, `Choix automatique débloqué à ${AUTO_PICK_KILLS} ennemis éliminés (${fmt(st.stats.kills)} / ${AUTO_PICK_KILLS})`),
     ),
     selectMode &&
       h(
@@ -140,7 +149,15 @@ function legionBlock(s: Soldier, removed: Set<string>): HTMLElement {
     h(
       'p',
       { class: 'muted small' },
-      `Cochez les améliorations à retirer. ${s.name} redescend au niveau 1 et propose de nouveau des améliorations de Légende.`,
+      `${s.name} a atteint le niveau max. Cochez les améliorations à retirer (facultatif). Une fois la Légion accordée :`,
+    ),
+    h(
+      'ul',
+      { class: 'muted small legion-effects' },
+      h('li', null, `${s.name} repart au niveau 1, avec son XP remis à zéro : ses statistiques baissent fortement jusqu'à ce qu'il remonte.`),
+      h('li', null, 'Les améliorations cochées sont perdues. Celles que vous gardez restent, et chacune réduit le nombre de choix à faire en remontant.'),
+      h('li', null, `Il propose 3 améliorations de Légende, bien plus puissantes, et gagne ${TRAINING_PER_SOLDIER} entraînements supplémentaires.`),
+      h('li', null, "Il garde le titre Légende et reçoit le titre Légion d'honneur. Cette décision est définitive."),
     ),
     h(
       'div',
@@ -168,7 +185,7 @@ function legionBlock(s: Soldier, removed: Set<string>): HTMLElement {
         onclick: () => {
           const toRemove = [...removed];
           const detail = toRemove.length ? `retirer ${toRemove.length} amélioration${toRemove.length > 1 ? 's' : ''} et ` : '';
-          if (!confirm(`Accorder la Légion d'honneur à ${s.name} : ${detail}le ramener au niveau 1 ?`)) return;
+          if (!confirm(`Accorder la Légion d'honneur à ${s.name} ? ${detail}${s.name} repartira au niveau 1 (XP remise à zéro, statistiques fortement réduites). Cette action est définitive.`)) return;
           if (!mutate((st) => legionOfHonor(st, s.id, toRemove))) return;
           removed.clear();
           toast(`${s.name} reçoit la Légion d'honneur.`, 'good');

@@ -1,4 +1,4 @@
-import { ARENA_H, ARENA_W, type BattleEvent, type BattleResult, type BattleUnit, type Frame } from '../game/battle';
+import { ARENA_H, ARENA_W, DT, type BattleEvent, type BattleResult, type BattleUnit, type Frame } from '../game/battle';
 import { RARITIES } from '../game/data';
 import type { BattleReport } from '../game/combat';
 import { getState } from '../game/state';
@@ -14,7 +14,8 @@ interface UnitView {
   facing: 1 | -1;
 }
 
-export function openBattle(title: string, units: BattleUnit[], result: BattleResult, report: BattleReport, onClose: () => void): void {
+/** `report` est nul pour une simulation : pas de récompense ni de progression à annoncer. */
+export function openBattle(title: string, units: BattleUnit[], result: BattleResult, report: BattleReport | null, onClose: () => void): void {
   const frames = result.frames;
   let speed: BattleSpeed = getState().battleSpeed;
   let idx = 0;
@@ -173,7 +174,7 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
     if (finished) return;
     finished = true;
     controls.remove();
-    overlay.appendChild(resultPanel(report, close));
+    overlay.appendChild(report ? resultPanel(report, close) : simulationPanel(units, result, close));
   }
 
   overlay.append(h('div', { class: 'battle-top' }, h('h2', null, title), controls), hud, arena);
@@ -181,6 +182,36 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
   applyFrame(frames[0], true);
   idx = 1;
   timer = window.setTimeout(step, 600);
+}
+
+function simulationPanel(units: BattleUnit[], result: BattleResult, close: () => void): HTMLElement {
+  const rows = units
+    .filter((u) => u.team === 'ally')
+    .map((u) => {
+      const t = result.totals[u.id];
+      const dead = result.deadIds.includes(u.id);
+      return h(
+        'tr',
+        { class: dead ? 'died' : '' },
+        h('td', null, u.name),
+        h('td', null, dead ? 'Tombé' : 'Debout'),
+        h('td', null, fmt(Math.round(t.dealt))),
+        h('td', null, fmt(Math.round(t.taken))),
+      );
+    });
+  return h(
+    'div',
+    { class: 'result' },
+    h('h2', null, 'Simulation terminée'),
+    h('p', { class: 'muted' }, `Durée : ${(result.ticks * DT).toFixed(1)} s. Aucune récompense, aucune perte.`),
+    h(
+      'table',
+      { class: 'stats-table' },
+      h('tr', null, h('th', null, 'Soldat'), h('th', null, 'État'), h('th', null, 'Infligés'), h('th', null, 'Subis')),
+      rows,
+    ),
+    h('button', { class: 'btn btn-big', onclick: close }, 'Retour'),
+  );
 }
 
 function resultPanel(report: BattleReport, close: () => void): HTMLElement {

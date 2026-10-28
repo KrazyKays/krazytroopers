@@ -1,5 +1,5 @@
 ﻿import { SQUAD_MAX, TRAINING_PER_SOLDIER } from '../game/data';
-import { campaignGold, campaignXp, launchBattle, trainingXp, TRAINING_GOLD } from '../game/combat';
+import { campaignGold, campaignXp, launchBattle, launchSimulation, trainingXp, TRAINING_GOLD } from '../game/combat';
 import { previewCampaign } from '../game/enemies';
 import { sortSquad } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
@@ -8,14 +8,14 @@ import { h } from './dom';
 import { openBattle } from './battleView';
 import { fmt, getSquadSort, soldierCard, sortBar, toast } from './components';
 
-type Mode = 'training' | 'campaign';
+type Mode = 'training' | 'campaign' | 'simulation';
 
 let mode: Mode = 'training';
 const selected = new Set<string>();
 let campaignPick: number | null = null;
 
 function eligible(s: Soldier): boolean {
-  return mode === 'campaign' || s.trainingsLeft > 0;
+  return mode !== 'training' || s.trainingsLeft > 0;
 }
 
 function autoSelect(st: GameState): void {
@@ -27,6 +27,16 @@ function autoSelect(st: GameState): void {
 function launch(): void {
   const st = getState();
   const squad = [...selected];
+  if (mode === 'simulation') {
+    // aucune conséquence : la sélection reste en place pour relancer tout de suite
+    const sim = launchSimulation(st, squad);
+    if (!sim.ok) {
+      toast(sim.error, 'bad');
+      return;
+    }
+    openBattle('Simulation — épouvantail', sim.units, sim.result, null, () => refresh());
+    return;
+  }
   const level = Math.min(campaignPick ?? st.campaignLevel + 1, st.campaignLevel + 1);
   const res = mutate((state) => launchBattle(state, mode === 'training' ? { mode: 'training', squad } : { mode: 'campaign', squad, level }));
   if (!res.ok) {
@@ -55,6 +65,7 @@ export function renderCombat(): HTMLElement {
     { class: 'subtabs' },
     h('button', { class: `subtab${mode === 'training' ? ' active' : ''}`, onclick: () => { mode = 'training'; refresh(); } }, 'Entraînement'),
     h('button', { class: `subtab${mode === 'campaign' ? ' active' : ''}`, onclick: () => { mode = 'campaign'; refresh(); } }, `Campagne (niveau ${nextLevel})`),
+    h('button', { class: `subtab${mode === 'simulation' ? ' active' : ''}`, onclick: () => { mode = 'simulation'; refresh(); } }, 'Simulation'),
   );
 
   let info: HTMLElement;
@@ -66,6 +77,14 @@ export function renderCombat(): HTMLElement {
       h('h3', null, "Combat d'entraînement"),
       h('p', null, `Affrontez des cibles adaptées au niveau de votre escouade pour gagner de l'expérience (environ ${fmt(trainingXp(avg))} XP par survivant, ${TRAINING_GOLD} or en cas de victoire).`),
       h('p', { class: 'muted small' }, `Chaque soldat peut participer à ${TRAINING_PER_SOLDIER} entraînements dans sa vie. Un soldat vaincu meurt définitivement.`),
+    );
+  } else if (mode === 'simulation') {
+    info = h(
+      'div',
+      { class: 'panel' },
+      h('h3', null, 'Simulation de combat'),
+      h('p', null, "Affrontez un épouvantail invincible. Il frappe le soldat le plus proche de lui, à 0 de dégâts au début, puis ses coups gagnent en puissance avec le temps."),
+      h('p', { class: 'muted small' }, "Aucune conséquence : pas d'XP, pas d'or, aucun soldat ne meurt et les entraînements ne sont pas consommés. Le but est d'observer le placement de vos soldats et leurs coups."),
     );
   } else {
     const prev = previewCampaign(level);
@@ -143,7 +162,7 @@ export function renderCombat(): HTMLElement {
   const launchBtn = h(
     'button',
     { class: 'btn btn-big btn-gold', disabled: !canLaunch, onclick: launch },
-    mode === 'training' ? "Lancer l'entraînement" : `Lancer le niveau ${level}`,
+    mode === 'training' ? "Lancer l'entraînement" : mode === 'simulation' ? 'Lancer la simulation' : `Lancer le niveau ${level}`,
   );
 
   return h('section', null, h('h2', null, 'Combat'), tabs, info, squadPanel, h('div', { class: 'launch-bar' }, launchBtn));

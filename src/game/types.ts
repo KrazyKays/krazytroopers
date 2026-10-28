@@ -47,7 +47,7 @@ export interface GameState {
   campaignLevel: number;
   freePulls: number;
   nextId: number;
-  stats: { won: number; lost: number; deaths: number };
+  stats: { won: number; lost: number; deaths: number; kills: number };
   battleSpeed: BattleSpeed;
 }
 

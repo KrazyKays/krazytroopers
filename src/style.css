@@ -583,7 +583,7 @@ h3 {
 .weapon-list,
 .weapon-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
   gap: 0.5rem;
 }
 
@@ -591,8 +591,8 @@ h3 {
 .weapon-card {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.5rem 0.6rem;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
   background: var(--panel);
   border: 1px solid var(--rc);
   border-radius: 6px;
@@ -646,11 +646,82 @@ h3 {
 .weapon-item small,
 .weapon-info small {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-size: 0.85rem;
+  line-height: 1.3;
 }
 
-.weapon-item small.owner {
+.weapon-item small.owner,
+.weapon-info small.owner {
+  color: var(--text);
   font-weight: bold;
+}
+
+/* Tuile d'arme : nom en haut, image, stats compactes, bouton de vente en bas */
+.weapon-card {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.5rem;
+  padding: 0.6rem;
+}
+
+.weapon-head {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.weapon-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 1rem;
+}
+
+.weapon-art .weapon-icon {
+  flex: none;
+  width: 100%;
+  height: 96px;
+  padding: 6px;
+}
+
+.weapon-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.2rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.weapon-stat {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.25rem;
+  white-space: nowrap;
+}
+
+.weapon-stat-label {
+  color: var(--muted);
+}
+
+.weapon-stat b {
+  color: var(--text);
+}
+
+.weapon-card small {
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+.weapon-card small.owner {
+  color: var(--text);
+  font-weight: bold;
+}
+
+.weapon-sell {
+  width: 100%;
+  margin-top: auto;
 }
 
 .weapon-icon {

@@ -1,4 +1,5 @@
 import {
+  AUTO_PICK_KILLS,
   FIRST_NAMES,
   HAIR_COLORS,
   HELMET_COLORS,
@@ -105,9 +106,28 @@ export function pickUpgrade(st: GameState, soldierId: string, upgradeId: string)
   return true;
 }
 
+export function autoPickUnlocked(st: GameState): boolean {
+  return st.stats.kills >= AUTO_PICK_KILLS;
+}
+
+// Choisit au hasard toutes les améliorations en attente de toute l'escouade (une fois le déblocage atteint).
+// Renvoie le nombre d'améliorations choisies.
+export function autoPickAll(st: GameState, rng: Rng = Math.random): number {
+  if (!autoPickUnlocked(st)) return 0;
+  let picks = 0;
+  for (const s of st.soldiers) {
+    while (s.picksLeft > 0 && s.upgradeChoices?.length) {
+      pickUpgrade(st, s.id, pick(rng, s.upgradeChoices));
+      picks++;
+    }
+  }
+  return picks;
+}
+
 // Nombre total de choix auquel un soldat a droit à son niveau : 3 au niveau 1, puis +1 tous les PICK_EVERY_LEVELS niveaux.
+// Le niveau max n'apporte aucun choix supplémentaire : il sert à accorder la Légion d'honneur.
 export function entitledPicks(level: number): number {
-  return Math.min(MAX_UPGRADES, UPGRADE_PICKS + Math.floor(level / PICK_EVERY_LEVELS));
+  return Math.min(MAX_UPGRADES, UPGRADE_PICKS + Math.floor(Math.min(level, MAX_LEVEL - 1) / PICK_EVERY_LEVELS));
 }
 
 // Recalcule les choix en attente pour que le total (choisis + en attente) suive la courbe du niveau.

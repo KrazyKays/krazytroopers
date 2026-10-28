@@ -16,6 +16,10 @@ function sellableWeapons(rarity?: Rarity): WeaponItem[] {
   return st.weapons.filter((w) => !equipped.has(w.uid) && (!rarity || WEAPONS_BY_ID[w.defId].rarity === rarity));
 }
 
+function statItem(label: string, value: string): HTMLElement {
+  return h('div', { class: 'weapon-stat' }, h('span', { class: 'weapon-stat-label' }, label), h('b', null, value));
+}
+
 function weaponsValue(items: WeaponItem[]): number {
   return items.reduce((sum, w) => sum + RARITIES[WEAPONS_BY_ID[w.defId].rarity].sellValue, 0);
 }
@@ -89,30 +93,38 @@ export function renderArsenal(): HTMLElement {
             return h(
               'div',
               { class: 'weapon-card', style: `--rc:${info.color}` },
-              h('input', {
-                class: 'weapon-check',
-                type: 'checkbox',
-                checked: selected.has(w.uid),
-                disabled: !!owner,
-                title: owner ? 'Arme équipée : non vendable en lot' : 'Sélectionner pour la vente',
-                onchange: (e) => {
-                  if ((e.target as HTMLInputElement).checked) selected.add(w.uid);
-                  else selected.delete(w.uid);
-                  refresh();
-                },
-              }),
-              weaponIcon(def),
               h(
                 'div',
-                { class: 'weapon-info' },
-                h('b', { style: `color:${info.color}` }, def.name),
-                h('small', null, `${info.label} · ${fmt(def.damage)} dégâts · portée ${fmt(def.range)} · ${fmt(def.cooldown, 2)} s${def.aoe ? ` · zone ${def.aoe}` : ''}${def.armor ? ` · armure +${def.armor}` : ''}`),
-                h('small', { class: 'muted' }, owner ? `Équipée par ${owner}` : 'Disponible'),
+                { class: 'weapon-head' },
+                h('input', {
+                  class: 'weapon-check',
+                  type: 'checkbox',
+                  checked: selected.has(w.uid),
+                  disabled: !!owner,
+                  title: owner ? 'Arme équipée : non vendable en lot' : 'Sélectionner pour la vente',
+                  onchange: (e) => {
+                    if ((e.target as HTMLInputElement).checked) selected.add(w.uid);
+                    else selected.delete(w.uid);
+                    refresh();
+                  },
+                }),
+                h('b', { class: 'weapon-name', style: `color:${info.color}` }, def.name),
               ),
+              h('div', { class: 'weapon-art' }, weaponIcon(def)),
+              h(
+                'div',
+                { class: 'weapon-stats' },
+                statItem('Dégâts', fmt(def.damage)),
+                statItem('Portée', fmt(def.range)),
+                statItem('Recharge', `${fmt(def.cooldown, 2)} s`),
+                def.aoe ? statItem('Zone', fmt(def.aoe)) : false,
+                def.armor ? statItem('Armure', `+${fmt(def.armor)}`) : false,
+              ),
+              h('small', { class: owner ? 'owner' : 'muted' }, `${info.label} · ${owner ? `Équipée par ${owner}` : 'Disponible'}`),
               h(
                 'button',
                 {
-                  class: 'btn btn-small',
+                  class: 'btn btn-small weapon-sell',
                   onclick: () => {
                     if (owner && !confirm(`${def.name} est équipée par ${owner}. Vendre quand même ?`)) return;
                     const gold = mutate((state) => sellWeapons(state, [w.uid]));

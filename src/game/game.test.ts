@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { simulate } from './battle';
-import { launchBattle } from './combat';
-import { LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PITY_LIMIT, PULL_COST, START_FREE_PULLS, START_GOLD, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADE_PICKS, UPGRADES, WEAPONS_BY_ID } from './data';
+import { launchBattle, launchSimulation } from './combat';
+import { AUTO_PICK_KILLS, LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PITY_LIMIT, PULL_COST, START_FREE_PULLS, START_GOLD, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADE_PICKS, UPGRADES, WEAPONS_BY_ID } from './data';
 import { buildCampaignEnemies } from './enemies';
 import { mulberry32 } from './rng';
-import { createSoldier, equipWeapon, grantLevelPicks, legionOfHonor, pickUpgrade, recruit, releaseSoldier, releaseSoldiers, sellWeapon, sellWeapons, sortSquad, toggleFavorite } from './roster';
+import { autoPickAll, autoPickUnlocked, createSoldier, entitledPicks, equipWeapon, grantLevelPicks, legionOfHonor, pickUpgrade, recruit, releaseSoldier, releaseSoldiers, sellWeapon, sellWeapons, sortSquad, toggleFavorite } from './roster';
 import { createInitialState } from './state';
 import { addXp, computeStats } from './stats';
 import { soldierLook } from './look';
@@ -219,6 +219,16 @@ describe('titres et légion d’honneur', () => {
     expect(legionOfHonor(st, s.id, [])).toBe(false);
   });
 
+  it('n’offre aucun choix d’amélioration au niveau max', () => {
+    expect(entitledPicks(MAX_LEVEL)).toBe(entitledPicks(MAX_LEVEL - 1));
+    const st = stateWithSoldiers(1, MAX_LEVEL);
+    const [s] = st.soldiers;
+    s.upgrades = [];
+    grantLevelPicks(s);
+    expect(s.picksLeft).toBe(entitledPicks(MAX_LEVEL - 1));
+    expect(s.upgradeChoices).not.toBeNull();
+  });
+
   it('plafonne le nombre d’améliorations', () => {
     const st = stateWithSoldiers(1, 4);
     const [s] = st.soldiers;
@@ -270,6 +280,29 @@ describe('entraînement et campagne', () => {
   });
 });
 
+describe('simulation', () => {
+  it('ne modifie ni la progression ni les soldats', () => {
+    const st = stateWithSoldiers(3, 2);
+    const before = JSON.stringify(st);
+    const launch = launchSimulation(st, st.soldiers.map((s) => s.id), 7);
+    expect(launch.ok).toBe(true);
+    expect(JSON.stringify(st)).toBe(before);
+  });
+
+  it("garde l'épouvantail debout et ses coups plus forts en fin de combat", () => {
+    const st = stateWithSoldiers(2, 1);
+    const launch = launchSimulation(st, st.soldiers.map((s) => s.id), 7);
+    if (!launch.ok) throw new Error(launch.error);
+    const sc = launch.units.length - 1;
+    expect(launch.result.frames.every((f) => f.p[sc * 3 + 2] === 1)).toBe(true);
+    expect(launch.result.deadIds).not.toContain('scarecrow');
+    const hits: { dmg: number }[] = [];
+    for (const f of launch.result.frames) for (const e of f.e) if (e.t === 'hit' && e.a === sc && !e.splash) hits.push(e);
+    expect(hits.length).toBeGreaterThan(2);
+    expect(hits[hits.length - 1].dmg).toBeGreaterThan(hits[0].dmg);
+  });
+});
+
 describe('boucliers', () => {
   it('apportent leur armure en plus de celle du soldat, au corps à corps', () => {
     const s = stateWithSoldiers(1, 1).soldiers[0];
@@ -278,5 +311,47 @@ describe('boucliers', () => {
     expect(bare.armor).toBe(0);
     expect(shielded.armor).toBe(WEAPONS_BY_ID.aegis.armor);
     expect(shielded.ranged).toBe(false);
+  });
+});
+
+describe('choix automatique des améliorations', () => {
+  it('reste verrouillé tant que le total d’éliminations n’est pas atteint', () => {
+    const st = stateWithSoldiers(2, 1);
+    st.stats.kills = AUTO_PICK_KILLS - 1;
+    expect(autoPickUnlocked(st)).toBe(false);
+    expect(autoPickAll(st, mulberry32(1))).toBe(0);
+    expect(st.soldiers.every((s) => s.picksLeft === UPGRADE_PICKS)).toBe(true);
+  });
+
+  it('choisit toutes les améliorations en attente de toute l’escouade une fois débloqué', () => {
+    const st = stateWithSoldiers(3, 1);
+    st.stats.kills = AUTO_PICK_KILLS;
+    st.soldiers[1].level = 6;
+    for (const s of st.soldiers) grantLevelPicks(s);
+    const expected = st.soldiers.reduce((n, s) => n + s.picksLeft, 0);
+    expect(autoPickAll(st, mulberry32(7))).toBe(expected);
+    for (const s of st.soldiers) {
+      expect(s.picksLeft).toBe(0);
+      expect(s.upgradeChoices).toBeNull();
+      expect(new Set(s.upgrades).size).toBe(s.upgrades.length);
+    }
+  });
+
+  it('ne choisit que parmi les propositions du soldat', () => {
+    const st = stateWithSoldiers(1, 1);
+    st.stats.kills = AUTO_PICK_KILLS;
+    const [s] = st.soldiers;
+    const offered = [...(s.upgradeChoices ?? [])];
+    autoPickAll(st, mulberry32(3));
+    expect(offered).toContain(s.upgrades[0]);
+  });
+
+  it('compte les éliminations de chaque combat dans le total global', () => {
+    const st = stateWithSoldiers(3, 20);
+    const before = st.stats.kills;
+    const launch = launchBattle(st, { mode: 'campaign', squad: st.soldiers.map((s) => s.id), level: 1 }, 99);
+    if (!launch.ok) throw new Error(launch.error);
+    const total = Object.values(launch.result.kills).reduce((n, k) => n + k, 0);
+    expect(st.stats.kills - before).toBe(total);
   });
 });
