@@ -1,5 +1,5 @@
 import { DT, simulate, type BattleResult, type BattleUnit } from './battle';
-import { BOSS_FREE_PULLS, SURVIVAL_REST_HEAL, type UnlockDef } from './data';
+import { BOSS_FREE_PULLS, MAX_LEVEL, SURVIVAL_REST_HEAL, type UnlockDef } from './data';
 import {
   buildCampaignEnemies,
   buildDailyEnemies,
@@ -16,7 +16,7 @@ import {
 } from './enemies';
 import { soldierLook } from './look';
 import { isUnlocked, squadMax, unlockLevel, unlocksBetween } from './progress';
-import { grantLevelPicks, rollWeaponDrop } from './roster';
+import { grantLevelPicks, rollWeaponDrop, trainingCost } from './roster';
 import { aggregateMods, addXp, computeStats, weaponForSoldier } from './stats';
 import { nextUid } from './state';
 import { mulberry32, randomSeed, type Rng } from './rng';
@@ -70,6 +70,8 @@ export interface BattleReport {
   unlocked: UnlockDef[];
   daily?: { modifier: DailyModifier; streak: number };
   survival?: SurvivalReport;
+  /** Or payé au lancement pour les soldats sans entraînement gratuit. */
+  trainingFee?: number;
 }
 
 export type BattleLaunch =
@@ -82,6 +84,19 @@ export function trainingXp(avgLevel: number): number {
 
 export function trainingGold(avgLevel: number): number {
   return Math.round(10 + 4 * avgLevel);
+}
+
+/** Un soldat sans entraînement gratuit peut encore s'entraîner en payant, sauf au niveau maximum. */
+export function canTrain(s: Soldier): boolean {
+  return s.trainingsLeft > 0 || s.level < MAX_LEVEL;
+}
+
+/**
+ * Or à payer pour lancer un entraînement : chaque soldat sans entraînement gratuit paie le sien,
+ * au tarif de son niveau actuel. Payé au lancement, il ne peut pas être stocké pour plus tard.
+ */
+export function trainingFee(squad: readonly Soldier[]): number {
+  return squad.reduce((sum, s) => sum + (s.trainingsLeft > 0 ? 0 : trainingCost(s)), 0);
 }
 
 export function campaignXp(level: number): number {
@@ -180,8 +195,8 @@ function setupBattle(st: GameState, req: BattleRequest): Setup | string {
   if (typeof squad === 'string') return squad;
   const allies = allyUnits(st, squad);
   if (req.mode === 'training') {
-    const tired = squad.find((s) => s.trainingsLeft <= 0);
-    if (tired) return `${tired.name} n'a plus d'entraînement disponible.`;
+    const maxed = squad.find((s) => !canTrain(s));
+    if (maxed) return `${maxed.name} est au niveau maximum et n'a plus d'entraînement gratuit.`;
     const avgLevel = Math.round(squad.reduce((sum, s) => sum + s.level, 0) / squad.length);
     return { squad, allies, enemies: (rng) => buildTrainingEnemies(avgLevel, squad.length, rng), level: null };
   }
@@ -238,6 +253,9 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   const setup = setupBattle(st, req);
   if (typeof setup === 'string') return { ok: false, error: setup };
   const { squad, allies, level } = setup;
+  const fee = req.mode === 'training' ? trainingFee(squad) : 0;
+  if (st.gold < fee) return { ok: false, error: `Pas assez d'or : cet entraînement coûte ${fee} or.` };
+  st.gold -= fee;
 
   const enemies = setup.enemies(mulberry32(seed ^ 0x9e3779b9));
   const units = [...allies, ...enemies];
@@ -265,7 +283,7 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
     const { dealt, taken, healed } = result.totals[s.id];
     s.kills += kills;
     st.stats.kills += kills;
-    if (req.mode === 'training') s.trainingsLeft--;
+    if (req.mode === 'training' && s.trainingsLeft > 0) s.trainingsLeft--;
     if (died) st.stats.deaths++;
     return { id: s.id, name: s.name, xpGained: gained, levelsGained, newLevel: s.level, died, wounded: fell && !died, kills, dealt, taken, healed };
   });
@@ -282,6 +300,7 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   else st.stats.lost++;
 
   if (req.mode === 'training') {
+    if (fee > 0) report.trainingFee = fee;
     if (won) report.gold = trainingGold(avgLevel);
   } else if (req.mode === 'campaign') {
     if (won) {

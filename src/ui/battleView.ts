@@ -338,6 +338,7 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
     h(
       'div',
       { class: 'result-rewards' },
+      report.trainingFee && h('span', { class: 'reward cost', title: 'Entraînements payants, réglés au lancement' }, `−${fmt(report.trainingFee)} or d'entraînement`),
       report.gold > 0 && h('span', { class: 'reward' }, `+${fmt(report.gold)} or`),
       report.weapon && h('span', { class: 'reward', style: `color:${RARITIES[report.weapon.rarity].color}` }, weaponIcon(report.weapon), ` ${report.weapon.name} obtenu !`),
       report.freePulls > 0 && h('span', { class: 'reward' }, `+${report.freePulls} tirage${report.freePulls > 1 ? 's' : ''} gratuit${report.freePulls > 1 ? 's' : ''}`),

@@ -2,6 +2,7 @@
 import {
   campaignGold,
   campaignXp,
+  canTrain,
   cashOutSurvival,
   dailyDone,
   dailyGold,
@@ -12,6 +13,7 @@ import {
   launchBattle,
   launchSimulation,
   survivalWaveGold,
+  trainingFee,
   trainingGold,
   trainingXp,
   type BattleRequest,
@@ -33,7 +35,7 @@ import {
   type SimulationConfig,
 } from '../game/enemies';
 import { isUnlocked, squadMax, unlockLevel } from '../game/progress';
-import { sortSquad } from '../game/roster';
+import { sortSquad, trainingCost } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
 import { computeStats, weaponForSoldier } from '../game/stats';
 import type { GameState, Soldier } from '../game/types';
@@ -136,7 +138,18 @@ const simKey = (): string => JSON.stringify([sim, [...selected].sort()]);
 const simMaxLevel = (st: GameState): number => Math.max(10, st.campaignLevel + 10);
 
 function eligible(s: Soldier): boolean {
+  return mode !== 'training' || canTrain(s);
+}
+
+// La sélection auto ne dépense jamais d'or : un entraînement payant se choisit à la main
+function autoEligible(s: Soldier): boolean {
   return mode !== 'training' || s.trainingsLeft > 0;
+}
+
+const paidTraining = (s: Soldier): boolean => mode === 'training' && s.trainingsLeft <= 0 && canTrain(s);
+
+function feeLabel(fee: number): string {
+  return fee > 0 ? ` — ${fmt(fee)} or` : '';
 }
 
 const locked = (st: GameState): UnlockId | null => {
@@ -154,7 +167,7 @@ function pruneSelection(st: GameState): void {
 
 function autoSelect(st: GameState): void {
   selected.clear();
-  const ready = st.soldiers.filter(eligible);
+  const ready = st.soldiers.filter(autoEligible);
   for (const s of sortSquad(st, getSquadSort(), ready).slice(0, squadMax(st))) selected.add(s.id);
 }
 
@@ -207,7 +220,8 @@ function launchFight(st: GameState, level: number): void {
   } else if (mode !== 'daily' && selected.size > 0) {
     const nextLevel = Math.min(campaignPick ?? after.campaignLevel + 1, after.campaignLevel + 1);
     const replayLabel = mode === 'training' ? 'Nouvel entraînement' : nextLevel > level ? `Niveau suivant (${nextLevel})` : `Rejouer le niveau ${level}`;
-    replay = { label: `${replayLabel} — ${selected.size} soldat${selected.size > 1 ? 's' : ''}`, run: launch };
+    const fee = mode === 'training' ? trainingFee(after.soldiers.filter((s) => selected.has(s.id))) : 0;
+    replay = { label: `${replayLabel} — ${selected.size} soldat${selected.size > 1 ? 's' : ''}${feeLabel(fee)}`, run: launch };
   }
   // l'état est déjà enregistré : on rafraîchit simplement l'écran
   openBattle(title, res.units, res.result, res.report, () => refresh(), replay);
@@ -416,7 +430,7 @@ export function renderCombat(): HTMLElement {
       { class: 'panel' },
       h('h3', null, "Combat d'entraînement"),
       h('p', null, `Affrontez des cibles adaptées au niveau de votre escouade pour gagner de l'expérience (environ ${fmt(trainingXp(avg))} XP par soldat resté debout, ${fmt(trainingGold(avg))} or en cas de victoire).`),
-      h('p', { class: 'muted small' }, `Sans danger : un soldat mis K.O. à l'entraînement s'en remet, mais ne gagne pas d'XP. Chaque soldat a ${TRAINING_PER_SOLDIER} entraînements, et vous pouvez en acheter d'autres depuis sa fiche.`),
+      h('p', { class: 'muted small' }, `Sans danger : un soldat mis K.O. à l'entraînement s'en remet, mais ne gagne pas d'XP. Chaque soldat a ${TRAINING_PER_SOLDIER} entraînements gratuits ; ensuite, vous pouvez encore l'engager en payant son entraînement au lancement (selon son niveau).`),
     );
   } else if (mode === 'simulation') {
     info = simulationInfo(st);
@@ -452,8 +466,10 @@ export function renderCombat(): HTMLElement {
   const runActive = mode === 'survival' && !!st.survival;
   const picked = st.soldiers.filter((s) => selected.has(s.id));
   const unarmed = picked.filter((s) => !s.weaponUid);
+  const fee = mode === 'training' ? trainingFee(picked) : 0;
+  const broke = st.gold < fee;
   const blocked = !!lockId || (mode === 'daily' && dailyDone(st));
-  const canLaunch = !blocked && (runActive ? st.survival!.squad.some((id) => st.soldiers.some((s) => s.id === id)) : selected.size >= 1);
+  const canLaunch = !blocked && !broke && (runActive ? st.survival!.squad.some((id) => st.soldiers.some((s) => s.id === id)) : selected.size >= 1);
 
   const squadPanel = runActive || lockId ? null : h(
     'div',
@@ -478,10 +494,11 @@ export function renderCombat(): HTMLElement {
           squadView(st, (s) => ({
             selected: selected.has(s.id),
             disabled: !eligible(s),
-            disabledReason: `${s.name} n'a plus d'entraînement disponible (achetez-en depuis sa fiche, ou partez en campagne).`,
+            disabledReason: `${s.name} est au niveau maximum et n'a plus d'entraînement gratuit.`,
+            cost: paidTraining(s) ? { text: `Entr. ${fmt(trainingCost(s))} or`, title: `Entraînements gratuits épuisés : engager ${s.name} coûte ${fmt(trainingCost(s))} or, payés au lancement.` } : undefined,
             onclick: () => {
               if (!eligible(s)) {
-                toast(`${s.name} n'a plus d'entraînement disponible.`, 'bad');
+                toast(`${s.name} est au niveau maximum et n'a plus d'entraînement gratuit.`, 'bad');
                 return;
               }
               if (selected.has(s.id)) selected.delete(s.id);
@@ -505,13 +522,20 @@ export function renderCombat(): HTMLElement {
       h(
         'p',
         { class: 'warn' },
-        'Tous vos soldats ont épuisé leurs entraînements. Achetez-en depuis leur fiche, ou partez en campagne. ',
+        'Plus aucun entraînement gratuit : sélectionnez des soldats pour un entraînement payant, ou partez en campagne. ',
         h('button', { class: 'link', onclick: () => { mode = 'campaign'; refresh(); } }, 'Passer à la campagne'),
+      ),
+    fee > 0 &&
+      h(
+        'p',
+        { class: broke ? 'warn' : 'muted small' },
+        `Entraînement payant pour ${picked.filter(paidTraining).map((s) => s.name).join(', ')} : ${fmt(fee)} or au lancement`,
+        broke ? ` (il vous manque ${fmt(fee - st.gold)} or).` : '.',
       ),
   );
 
   const label =
-    mode === 'training' ? "Lancer l'entraînement"
+    mode === 'training' ? `Lancer l'entraînement${feeLabel(fee)}`
     : mode === 'simulation' ? 'Lancer la simulation'
     : mode === 'daily' ? 'Relever le défi'
     : mode === 'survival' ? (st.survival ? `Lancer la vague ${st.survival.wave + 1}` : "Partir en expédition")
@@ -521,9 +545,13 @@ export function renderCombat(): HTMLElement {
     h(
       'button',
       { class: 'btn btn-big btn-gold', disabled: !canLaunch, onclick: launch },
-      canLaunch ? label : mode === 'daily' && dailyDone(st) ? 'Revenez demain' : runActive ? "Plus aucun soldat dans l'expédition" : 'Sélectionnez au moins un soldat',
+      canLaunch ? label
+      : mode === 'daily' && dailyDone(st) ? 'Revenez demain'
+      : runActive ? "Plus aucun soldat dans l'expédition"
+      : broke ? `Il manque ${fmt(fee - st.gold)} or`
+      : 'Sélectionnez au moins un soldat',
     );
-  const quickPick = !canLaunch && !blocked && !runActive && st.soldiers.some(eligible) && h('button', { class: 'btn btn-big', onclick: () => { autoSelect(st); refresh(); } }, 'Sélection auto');
+  const quickPick = !canLaunch && !blocked && !broke && !runActive && st.soldiers.some(autoEligible) && h('button', { class: 'btn btn-big', onclick: () => { autoSelect(st); refresh(); } }, 'Sélection auto');
   const est = canLaunch && mode !== 'simulation' ? currentBattleEstimate(st, battleRequest(st, level)) : null;
 
   return h(

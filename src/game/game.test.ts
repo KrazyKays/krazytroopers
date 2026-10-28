@@ -270,7 +270,7 @@ describe('titres et légion d’honneur', () => {
 });
 
 describe('entraînement et campagne', () => {
-  it('limite chaque soldat à 3 entraînements dans sa vie', () => {
+  it('donne 3 entraînements gratuits à chaque soldat, puis les fait payer', () => {
     const st = stateWithSoldiers(1, 20);
     const squad = [st.soldiers[0].id];
     for (let i = 0; i < TRAINING_PER_SOLDIER; i++) {
@@ -278,6 +278,7 @@ describe('entraînement et campagne', () => {
       expect(r.ok).toBe(true);
     }
     expect(st.soldiers[0].trainingsLeft).toBe(0);
+    st.gold = 0;
     expect(launchBattle(st, { mode: 'training', squad }, 9).ok).toBe(false);
     expect(st.soldiers[0].xp > 0 || st.soldiers[0].level > 20).toBe(true);
   });

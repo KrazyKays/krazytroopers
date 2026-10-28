@@ -64,7 +64,11 @@ export interface CardOpts {
   selected?: boolean;
   disabled?: boolean;
   disabledReason?: string;
+  /** Prix à payer si ce soldat est engagé (entraînement payant). */
+  cost?: { text: string; title: string };
 }
+
+const costPill = (opts: CardOpts) => opts.cost && h('span', { class: 'pill pill-cost', title: opts.cost.title }, opts.cost.text);
 
 function cardClass(base: string, s: Soldier, opts: CardOpts): string {
   return [base, `rarity-${s.rarity}`, opts.selected && 'selected', opts.onclick && 'clickable', opts.disabled && 'disabled', s.picksLeft > 0 && 'has-pick'].filter(Boolean).join(' ');
@@ -73,7 +77,7 @@ function cardClass(base: string, s: Soldier, opts: CardOpts): string {
 export function soldierCard(st: GameState, s: Soldier, opts: CardOpts = {}): HTMLElement {
   const weapon = weaponForSoldier(s, st.weapons);
   const stats = computeStats(s, weapon);
-  const trainings = s.trainingsLeft > 0 ? ` · ${s.trainingsLeft} entraînement${s.trainingsLeft > 1 ? 's' : ''} restant${s.trainingsLeft > 1 ? 's' : ''}` : '';
+  const trainings = s.trainingsLeft > 0 ? ` · ${s.trainingsLeft} entraînement${s.trainingsLeft > 1 ? 's' : ''} gratuit${s.trainingsLeft > 1 ? 's' : ''}` : '';
   const badges = s.titles.map((t) => h('span', { class: `title-badge title-badge-${t}`, title: TITLES[t].label }, TITLE_BADGE_ICON[t]));
   const nameClass = ['card-name', ...s.titles.map((t) => `name-${t}`)].join(' ');
   return h(
@@ -94,6 +98,7 @@ export function soldierCard(st: GameState, s: Soldier, opts: CardOpts = {}): HTM
       xpBar(s),
       h('div', { class: 'card-stats' }, `PV ${fmt(stats.maxHp)} · DPS ${fmt(dps(stats), 1)}${trainings}`),
       statusPills(s, weapon),
+      costPill(opts),
     ),
   );
 }
@@ -123,8 +128,8 @@ export function soldierRow(st: GameState, s: Soldier, opts: CardOpts = {}): HTML
     h('span', { class: 'row-level' }, rarityTag(s.rarity), ` Niv. ${s.level}`),
     h('span', { class: 'row-stat' }, `PV ${fmt(stats.maxHp)}`),
     h('span', { class: 'row-stat' }, `DPS ${fmt(dps(stats), 1)}`),
-    h('span', { class: 'row-stat', title: 'Entraînements restants' }, `Entr. ${s.trainingsLeft}`),
-    h('span', { class: 'row-pills' }, statusPills(s, weapon)),
+    h('span', { class: 'row-stat', title: 'Entraînements gratuits restants' }, `Entr. ${s.trainingsLeft}`),
+    h('span', { class: 'row-pills' }, statusPills(s, weapon), costPill(opts)),
   );
 }
 
@@ -240,7 +245,7 @@ export function weaponDelta(s: Soldier, from: WeaponDef, to: WeaponDef): HTMLEle
   return h(
     'small',
     { class: 'delta' },
-    shown.map(([label, d, digits], i) => [i > 0 && ' · ', h('span', { class: d > 0 ? 'up' : 'down' }, `${label} ${d > 0 ? '+' : '−'}${fmt(Math.abs(d), digits)}`)]),
+    shown.map(([label, d, digits]) => h('span', { class: d > 0 ? 'up' : 'down' }, `${label} ${d > 0 ? '+' : '−'}${fmt(Math.abs(d), digits)}`)),
   );
 }
 

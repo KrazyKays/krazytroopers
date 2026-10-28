@@ -202,19 +202,9 @@ export function sellWeapons(st: GameState, uids: readonly string[]): number {
 }
 
 /** Prix d'un entraînement supplémentaire : l'or excédentaire devient de l'XP, plus cher à haut niveau. */
+/** Prix d'un entraînement payant, réglé au lancement pour un soldat sans entraînement gratuit. */
 export function trainingCost(s: Soldier): number {
   return 40 + 12 * s.level;
-}
-
-export function buyTraining(st: GameState, soldierId: string): number | string {
-  const s = st.soldiers.find((x) => x.id === soldierId);
-  if (!s) return 'Soldat introuvable.';
-  if (s.level >= MAX_LEVEL) return 'Un soldat au niveau maximum n’a plus besoin d’entraînement.';
-  const cost = trainingCost(s);
-  if (st.gold < cost) return "Pas assez d'or.";
-  st.gold -= cost;
-  s.trainingsLeft++;
-  return cost;
 }
 
 /** Armes non équipées d'une rareté donnée : la matière première de la forge. */

@@ -721,7 +721,7 @@ h3 {
   outline: 2px solid var(--good);
 }
 
-.weapon-item span,
+.weapon-item > span,
 .weapon-info {
   display: flex;
   flex-direction: column;
@@ -1280,6 +1280,15 @@ h3 {
   color: #ffd0a0;
 }
 
+.pill-cost {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.reward.cost {
+  color: #ffd0a0;
+}
+
 .select-panel {
   border-color: #8a3f36;
 }
@@ -1592,6 +1601,10 @@ h3 {
 }
 
 /* ---------- Comparaison d'armes et équipement ---------- */
+
+.delta > span {
+  display: block;
+}
 
 .delta .up {
   color: var(--good);

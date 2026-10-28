@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { cashOutSurvival, dailyGold, estimateBattle, launchBattle } from './combat';
-import { BOSS_FREE_PULLS, FORGE_FEE, SQUAD_BASE, TRAINING_PER_SOLDIER, UNLOCKS, WEAPONS_BY_ID } from './data';
+import { BOSS_FREE_PULLS, FORGE_FEE, MAX_LEVEL, SQUAD_BASE, TRAINING_PER_SOLDIER, UNLOCKS, WEAPONS_BY_ID } from './data';
 import { buildDailyEnemies, dailyKey } from './enemies';
 import { squadMax, unlockLevel, unlocksBetween } from './progress';
 import { mulberry32 } from './rng';
-import { buyTraining, createSoldier, forgeWeapons, trainingCost } from './roster';
+import { createSoldier, forgeWeapons, trainingCost } from './roster';
 import { createInitialState, parseSave } from './state';
 import { computeStats } from './stats';
 import type { GameState } from './types';
@@ -211,16 +211,32 @@ describe('armes à bonus', () => {
   });
 });
 
-describe('entraînements achetés', () => {
-  it('convertit l’or en entraînement supplémentaire', () => {
-    const st = squadState(1, 3);
-    const s = st.soldiers[0];
-    const cost = trainingCost(s);
+describe('entraînements payants', () => {
+  it('fait payer au lancement les soldats sans entraînement gratuit, au tarif de leur niveau', () => {
+    const st = squadState(2, 3);
+    const [free, paid] = st.soldiers;
+    paid.trainingsLeft = 0;
+    const cost = trainingCost(paid);
+    st.gold = cost - 1;
+    const refused = launchBattle(st, { mode: 'training', squad: ids(st) }, 1);
+    expect(refused.ok).toBe(false);
+    expect(st.gold).toBe(cost - 1);
+    expect(free.trainingsLeft).toBe(TRAINING_PER_SOLDIER);
+
     st.gold = cost;
-    expect(buyTraining(st, s.id)).toBe(cost);
-    expect(s.trainingsLeft).toBe(TRAINING_PER_SOLDIER + 1);
-    expect(st.gold).toBe(0);
-    expect(typeof buyTraining(st, s.id)).toBe('string');
+    const r = launchBattle(st, { mode: 'training', squad: ids(st) }, 1);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.report.trainingFee).toBe(cost);
+    expect(st.gold).toBe(r.report.gold);
+    expect(free.trainingsLeft).toBe(TRAINING_PER_SOLDIER - 1);
+    expect(paid.trainingsLeft).toBe(0);
+  });
+
+  it('ne permet pas d’entraîner un soldat au niveau maximum sans entraînement gratuit', () => {
+    const st = squadState(1, MAX_LEVEL);
+    st.soldiers[0].trainingsLeft = 0;
+    st.gold = 1e6;
+    expect(launchBattle(st, { mode: 'training', squad: ids(st) }, 1).ok).toBe(false);
   });
 });
 

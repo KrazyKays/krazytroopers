@@ -1,6 +1,6 @@
 import { AUTO_PICK_KILLS, LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PICK_EVERY_LEVELS, RARITIES, RARITY_ORDER, TRAINING_PER_SOLDIER, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
 import { squadMax } from '../game/progress';
-import { autoPickAll, autoPickUnlocked, buyTraining, equipWeapon, legionOfHonor, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite, trainingCost } from '../game/roster';
+import { autoPickAll, autoPickUnlocked, equipWeapon, legionOfHonor, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite, trainingCost } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
 import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
 import type { GameState, Rarity, Soldier } from '../game/types';
@@ -180,7 +180,7 @@ function legionBlock(s: Soldier, removed: Set<string>): HTMLElement {
       { class: 'muted small legion-effects' },
       h('li', null, `${s.name} repart au niveau 1, avec son XP remis à zéro : ses statistiques baissent fortement jusqu'à ce qu'il remonte.`),
       h('li', null, 'Les améliorations cochées sont perdues. Celles que vous gardez restent, et chacune réduit le nombre de choix à faire en remontant.'),
-      h('li', null, `Il propose 3 améliorations de Légende, bien plus puissantes, et gagne ${TRAINING_PER_SOLDIER} entraînements supplémentaires.`),
+      h('li', null, `Il propose 3 améliorations de Légende, bien plus puissantes, et gagne ${TRAINING_PER_SOLDIER} entraînements gratuits supplémentaires.`),
       h('li', null, "Il garde le titre Légende et reçoit le titre Légion d'honneur. Cette décision est définitive."),
     ),
     h(
@@ -263,21 +263,15 @@ export function openSoldier(id: string): void {
         h(
           'div',
           { class: 'row training-row' },
-          h('span', { class: 'muted small' }, `${s.trainingsLeft} entraînement${s.trainingsLeft > 1 ? 's' : ''} restant${s.trainingsLeft > 1 ? 's' : ''}`),
-          s.level < MAX_LEVEL &&
-            h(
-              'button',
-              {
-                class: 'btn btn-small',
-                disabled: st.gold < trainingCost(s),
-                title: 'Un entraînement de plus pour ce soldat : un moyen de convertir l’or en XP',
-                onclick: () => {
-                  const res = mutate((state) => buyTraining(state, s.id));
-                  if (typeof res === 'string') toast(res, 'bad');
-                },
-              },
-              `+1 entraînement (${fmt(trainingCost(s))} or)`,
-            ),
+          h(
+            'span',
+            { class: 'muted small' },
+            s.trainingsLeft > 0
+              ? `${s.trainingsLeft} entraînement${s.trainingsLeft > 1 ? 's' : ''} gratuit${s.trainingsLeft > 1 ? 's' : ''} restant${s.trainingsLeft > 1 ? 's' : ''}`
+              : s.level < MAX_LEVEL
+                ? `Entraînements gratuits épuisés : ${fmt(trainingCost(s))} or par entraînement, payé au lancement`
+                : 'Entraînements gratuits épuisés',
+          ),
         ),
       ),
     );
