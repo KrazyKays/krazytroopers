@@ -4,7 +4,8 @@ import { getState, mutate, refresh } from '../game/state';
 import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
 import type { GameState, Rarity, Soldier } from '../game/types';
 import { h } from './dom';
-import { fmt, getSquadSort, openModal, rarityTag, sortBar, soldierCard, soldierSprite, titleTags, toast, weaponIcon, xpBar } from './components';
+import { goTo } from './nav';
+import { confirmDialog, fmt, getSquadSort, openModal, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
 
 const legendIds = new Set(LEGEND_UPGRADES.map((u) => u.id));
 
@@ -19,22 +20,38 @@ function releasableByRarity(st: GameState, rarity: Rarity): Soldier[] {
   return st.soldiers.filter((s) => s.rarity === rarity && !s.favorite);
 }
 
-function autoPickEverything(pending: number): void {
-  if (!confirm(`Choisir au hasard les ${pending} amélioration${pending > 1 ? 's' : ''} en attente de toute l'escouade ? Les choix ne pourront pas être modifiés.`)) return;
+async function autoPickEverything(pending: number): Promise<void> {
+  const ok = await confirmDialog({
+    title: 'Choix automatique',
+    body: `Choisir au hasard les ${pending} amélioration${pending > 1 ? 's' : ''} en attente de toute l'escouade ? Les choix ne pourront pas être modifiés.`,
+    confirm: 'Choisir au hasard',
+  });
+  if (!ok) return;
   const picks = mutate((st) => autoPickAll(st));
   toast(`${picks} amélioration${picks > 1 ? 's' : ''} choisie${picks > 1 ? 's' : ''} au hasard.`, 'good');
 }
 
-function releaseSoldierList(list: Soldier[], label: string): void {
+async function releaseSoldierList(list: Soldier[]): Promise<void> {
   if (list.length === 0) return;
   const gold = list.reduce((sum, s) => sum + RARITIES[s.rarity].releaseValue, 0);
-  const favorites = list.filter((s) => s.favorite).length;
-  const warning = favorites ? ` Dont ${favorites} favori${favorites > 1 ? 's' : ''}.` : '';
-  if (!confirm(`${label} : renvoyer ${list.length} soldat${list.length > 1 ? 's' : ''} pour ${fmt(gold)} or ?${warning}`)) return;
+  const favorites = list.filter((s) => s.favorite);
+  const ok = await confirmDialog({
+    title: `Renvoyer ${list.length} soldat${list.length > 1 ? 's' : ''} ?`,
+    body: [
+      h('p', null, `Vous recevrez ${fmt(gold)} or. Vous pourrez annuler juste après.`),
+      h('ul', { class: 'confirm-list' }, list.map((s) => h('li', null, rarityTag(s.rarity), ` ${s.name} · Niv. ${s.level}${s.favorite ? ' ★' : ''}`))),
+      favorites.length > 0 && h('p', { class: 'warn' }, `Attention : ${favorites.length} favori${favorites.length > 1 ? 's' : ''} dans la liste.`),
+    ],
+    confirm: `Renvoyer (+${fmt(gold)} or)`,
+    danger: true,
+  });
+  if (!ok) return;
   const ids = list.map((s) => s.id);
-  const earned = mutate((st) => releaseSoldiers(st, ids));
   for (const id of ids) selected.delete(id);
-  toast(`${list.length} soldat${list.length > 1 ? 's' : ''} ${list.length > 1 ? 'ont' : 'a'} quitté l'escouade (+${fmt(earned)} or).`);
+  undoable(
+    (st) => releaseSoldiers(st, ids),
+    (earned) => `${list.length} soldat${list.length > 1 ? 's' : ''} ${list.length > 1 ? 'ont' : 'a'} quitté l'escouade (+${fmt(earned)} or).`,
+  );
 }
 
 export function renderRoster(): HTMLElement {
@@ -44,19 +61,26 @@ export function renderRoster(): HTMLElement {
       'section',
       { class: 'panel empty' },
       h('h2', null, 'Votre escouade est vide'),
-      h('p', null, "Rendez-vous dans l'onglet « Recruter » pour tirer vos premiers soldats."),
+      h('p', null, 'Commencez par recruter vos premiers soldats.'),
+      h('button', { class: 'btn btn-big btn-gold', onclick: () => goTo('recruit') }, st.freePulls > 0 ? `Recruter (${st.freePulls} tirage${st.freePulls > 1 ? 's' : ''} gratuit${st.freePulls > 1 ? 's' : ''})` : 'Recruter'),
     );
   }
   const ids = new Set(st.soldiers.map((s) => s.id));
   for (const id of [...selected]) if (!ids.has(id)) selected.delete(id);
   const picked = st.soldiers.filter((s) => selected.has(s.id));
   const pending = st.soldiers.reduce((n, s) => n + s.picksLeft, 0);
+  const firstPending = sortSquad(st, getSquadSort()).find((s) => s.picksLeft > 0);
   return h(
     'section',
     null,
-    h('div', { class: 'section-head' }, h('h2', null, `Escouade (${st.soldiers.length})`), pending > 0 && h('span', { class: 'pill pill-pick' }, `${pending} amélioration${pending > 1 ? 's' : ''} en attente`)),
-    h('p', { class: 'muted' }, `Cliquez sur un soldat pour choisir ses améliorations et gérer son équipement. Une nouvelle amélioration est débloquée tous les ${PICK_EVERY_LEVELS} niveaux, dans la limite de ${MAX_UPGRADES}. Vous pouvez engager ${SQUAD_MAX} soldats par combat.`),
-    sortBar(),
+    h(
+      'div',
+      { class: 'section-head' },
+      h('h2', null, `Escouade (${st.soldiers.length})`),
+      firstPending && !selectMode && h('button', { class: 'btn btn-small btn-gold', onclick: () => openSoldier(firstPending.id) }, `Choisir les améliorations (${pending})`),
+    ),
+    h('p', { class: 'muted' }, `Cliquez sur un soldat pour choisir ses améliorations et son arme. Engagez jusqu'à ${SQUAD_MAX} soldats par combat.`),
+    squadToolbar(st),
     h(
       'div',
       { class: 'bulk-bar' },
@@ -70,54 +94,53 @@ export function renderRoster(): HTMLElement {
             refresh();
           },
         },
-        selectMode ? 'Terminer la sélection' : 'Sélection multiple',
+        selectMode ? 'Terminer' : 'Renvoyer des soldats…',
       ),
-      h('span', { class: 'muted small' }, 'Renvoi par rareté (hors favoris) :'),
-      RARITY_ORDER.map((r) => {
-        const list = releasableByRarity(st, r);
-        return h(
-          'button',
-          { class: 'btn btn-small', disabled: list.length === 0, onclick: () => releaseSoldierList(list, `Soldats ${RARITY_PLURAL[r]}`) },
-          `Renvoyer les ${RARITY_PLURAL[r]} (${list.length})`,
-        );
-      }),
-      autoPickUnlocked(st)
-        ? h('button', { class: 'btn btn-small', disabled: pending === 0, onclick: () => autoPickEverything(pending) }, `Choisir au hasard les améliorations en attente (${pending})`)
-        : h('span', { class: 'muted small' }, `Choix automatique débloqué à ${AUTO_PICK_KILLS} ennemis éliminés (${fmt(st.stats.kills)} / ${AUTO_PICK_KILLS})`),
+      !selectMode &&
+        (autoPickUnlocked(st)
+          ? h('button', { class: 'btn btn-small', disabled: pending === 0, onclick: () => autoPickEverything(pending) }, `Choisir au hasard les améliorations en attente (${pending})`)
+          : pending > 0 && h('span', { class: 'muted small' }, `Choix automatique débloqué à ${AUTO_PICK_KILLS} ennemis éliminés (${fmt(st.stats.kills)} / ${AUTO_PICK_KILLS})`)),
     ),
     selectMode &&
       h(
         'div',
-        { class: 'section-head' },
-        h('b', null, `${picked.length} sélectionné${picked.length > 1 ? 's' : ''}`),
+        { class: 'panel select-panel' },
+        h('p', { class: 'muted small' }, "Cliquez sur les soldats à renvoyer : chacun rapporte de l'or selon sa rareté. Les favoris ne sont jamais ajoutés par les raccourcis."),
         h(
           'div',
           { class: 'row' },
-          h('button', { class: 'btn btn-small', onclick: () => { for (const s of st.soldiers) selected.add(s.id); refresh(); } }, 'Tout sélectionner'),
-          h('button', { class: 'btn btn-small', onclick: () => { selected.clear(); refresh(); } }, 'Vider'),
+          h('span', { class: 'muted small' }, 'Ajouter tous les :'),
+          RARITY_ORDER.map((r) => {
+            const list = releasableByRarity(st, r);
+            return h(
+              'button',
+              { class: 'btn btn-small btn-rarity', style: `color:${RARITIES[r].color}`, disabled: list.length === 0, onclick: () => { for (const s of list) selected.add(s.id); refresh(); } },
+              `${RARITY_PLURAL[r]} (${list.length})`,
+            );
+          }),
+          h('button', { class: 'btn btn-small', disabled: picked.length === 0, onclick: () => { selected.clear(); refresh(); } }, 'Vider'),
+        ),
+        h(
+          'div',
+          { class: 'section-head select-summary' },
+          h('b', null, `${picked.length} sélectionné${picked.length > 1 ? 's' : ''}`),
           h(
             'button',
-            { class: 'btn btn-small btn-danger', disabled: picked.length === 0, onclick: () => releaseSoldierList(picked, 'Sélection') },
+            { class: 'btn btn-danger', disabled: picked.length === 0, onclick: () => void releaseSoldierList(picked) },
             `Renvoyer la sélection (+${fmt(picked.reduce((sum, s) => sum + RARITIES[s.rarity].releaseValue, 0))} or)`,
           ),
         ),
       ),
-    h(
-      'div',
-      { class: 'grid' },
-      sortSquad(st, getSquadSort()).map((s) =>
-        soldierCard(st, s, {
-          selected: selectMode && selected.has(s.id),
-          onclick: selectMode
-            ? () => {
-                if (selected.has(s.id)) selected.delete(s.id);
-                else selected.add(s.id);
-                refresh();
-              }
-            : () => openSoldier(s.id),
-        }),
-      ),
-    ),
+    squadView(st, (s) => ({
+      selected: selectMode && selected.has(s.id),
+      onclick: selectMode
+        ? () => {
+            if (selected.has(s.id)) selected.delete(s.id);
+            else selected.add(s.id);
+            refresh();
+          }
+        : () => openSoldier(s.id),
+    })),
   );
 }
 
@@ -182,11 +205,18 @@ function legionBlock(s: Soldier, removed: Set<string>): HTMLElement {
       'button',
       {
         class: 'btn btn-gold',
-        onclick: () => {
+        onclick: async () => {
           const toRemove = [...removed];
-          const detail = toRemove.length ? `retirer ${toRemove.length} amélioration${toRemove.length > 1 ? 's' : ''} et ` : '';
-          if (!confirm(`Accorder la Légion d'honneur à ${s.name} ? ${detail}${s.name} repartira au niveau 1 (XP remise à zéro, statistiques fortement réduites). Cette action est définitive.`)) return;
-          if (!mutate((st) => legionOfHonor(st, s.id, toRemove))) return;
+          const ok = await confirmDialog({
+            title: `Légion d'honneur pour ${s.name} ?`,
+            body: [
+              h('p', null, `${s.name} repartira au niveau 1 (XP remise à zéro, statistiques fortement réduites).`),
+              toRemove.length > 0 && h('p', null, `Améliorations retirées : ${toRemove.map((id) => UPGRADES_BY_ID[id].name).join(', ')}.`),
+              h('p', { class: 'warn' }, 'Cette action est définitive.'),
+            ],
+            confirm: "Accorder la Légion d'honneur",
+          });
+          if (!ok || !mutate((st) => legionOfHonor(st, s.id, toRemove))) return;
           removed.clear();
           toast(`${s.name} reçoit la Légion d'honneur.`, 'good');
         },
@@ -196,11 +226,19 @@ function legionBlock(s: Soldier, removed: Set<string>): HTMLElement {
   );
 }
 
+// Niveau auquel le soldat débloquera sa prochaine amélioration (null s'il n'en gagnera plus)
+function nextPickLevel(s: Soldier): number | null {
+  if (s.upgrades.length + s.picksLeft >= MAX_UPGRADES) return null;
+  const level = (Math.floor(s.level / PICK_EVERY_LEVELS) + 1) * PICK_EVERY_LEVELS;
+  return level < MAX_LEVEL ? level : null;
+}
+
 export function openSoldier(id: string): void {
   const legionRemoved = new Set<string>();
+  let current = id;
   openModal((close) => {
     const st = getState();
-    const s = st.soldiers.find((x) => x.id === id);
+    const s = st.soldiers.find((x) => x.id === current);
     if (!s) {
       queueMicrotask(close);
       return h('div');
@@ -264,7 +302,13 @@ export function openSoldier(id: string): void {
         ),
       );
     } else {
-      upgrades = h('div', { class: 'upgrade-block' }, h('h3', null, 'Améliorations'));
+      const next = nextPickLevel(s);
+      upgrades = h(
+        'div',
+        { class: 'upgrade-block' },
+        h('h3', null, `Améliorations (${s.upgrades.length} / ${MAX_UPGRADES})`),
+        next !== null && h('p', { class: 'muted small' }, `Prochaine amélioration au niveau ${next}.`),
+      );
     }
     if (s.upgrades.length > 0) {
       upgrades.appendChild(
@@ -293,8 +337,8 @@ export function openSoldier(id: string): void {
               'span',
               null,
               h('b', { style: `color:${RARITIES[def.rarity].color}` }, def.name),
-              h('small', null, `${fmt(def.damage)} dégâts · portée ${fmt(def.range)} · ${fmt(def.cooldown, 2)} s${def.aoe ? ` · zone ${def.aoe}` : ''}`),
-              owner && owner.id !== s.id && h('small', { class: 'muted owner' }, `Équipée par ${owner.name}`),
+              s.weaponUid === w.uid ? h('small', null, 'Équipée') : weaponDelta(s, weapon, def),
+              owner && owner.id !== s.id && h('small', { class: 'muted owner' }, `Équipée par ${owner.name} (échange)`),
             ),
           );
         }),
@@ -302,17 +346,29 @@ export function openSoldier(id: string): void {
         'button',
         { class: `weapon-item${s.weaponUid === null ? ' active' : ''}`, onclick: () => mutate((state) => equipWeapon(state, s.id, null)) },
         weaponIcon(WEAPONS_BY_ID.fists),
-        h('span', null, h('b', null, 'Poings nus'), h('small', null, 'Aucune arme')),
+        h('span', null, h('b', null, 'Poings nus'), s.weaponUid === null ? h('small', null, 'Aucune arme') : weaponDelta(s, weapon, WEAPONS_BY_ID.fists)),
       ),
     );
 
     const legion = s.level >= MAX_LEVEL && s.picksLeft === 0 ? legionBlock(s, legionRemoved) : null;
 
+    // Enchaîner les choix d'amélioration sans repasser par la liste
+    const nextPending = s.picksLeft === 0 ? sortSquad(st, getSquadSort()).find((x) => x.picksLeft > 0) : undefined;
+    const nextBanner =
+      nextPending &&
+      h(
+        'div',
+        { class: 'next-pending' },
+        h('span', null, `${s.name} est à jour. ${nextPending.name} a ${nextPending.picksLeft} amélioration${nextPending.picksLeft > 1 ? 's' : ''} à choisir.`),
+        h('button', { class: 'btn btn-small btn-gold', onclick: () => { current = nextPending.id; legionRemoved.clear(); refresh(); } }, 'Soldat suivant →'),
+      );
+
     return h(
       'div',
       { class: 'detail' },
-      h('button', { class: 'modal-close', onclick: close, title: 'Fermer' }, '×'),
+      h('button', { class: 'modal-close', onclick: close, title: 'Fermer (Échap)' }, '×'),
       header,
+      nextBanner,
       statsBlock,
       upgrades,
       legion,
@@ -329,12 +385,11 @@ export function openSoldier(id: string): void {
           'button',
           {
             class: 'btn btn-danger',
-            onclick: () => {
-              const warning = s.favorite ? ' Ce soldat est dans vos favoris.' : '';
-              if (!confirm(`Renvoyer ${s.name} pour ${info.releaseValue} or ?${warning}`)) return;
-              const gold = mutate((state) => releaseSoldier(state, s.id));
-              toast(`${s.name} a quitté l'escouade (+${gold} or).`);
+            onclick: async () => {
+              // Un renvoi simple s'annule depuis le message ; seul un favori demande confirmation
+              if (s.favorite && !(await confirmDialog({ title: `Renvoyer ${s.name} ?`, body: 'Ce soldat est dans vos favoris.', confirm: `Renvoyer (+${info.releaseValue} or)`, danger: true }))) return;
               close();
+              undoable((state) => releaseSoldier(state, s.id), (gold) => `${s.name} a quitté l'escouade (+${gold} or).`);
             },
           },
           `Renvoyer (+${info.releaseValue} or)`,

@@ -75,13 +75,16 @@ export function buildCampaignEnemies(level: number): BattleUnit[] {
   const boss = isBossLevel(level);
   const templates = compose(level, boss ? count - 1 : count, rng);
   const units = templates.map((t, i) => makeEnemy(t, WEAPONS_BY_ID[t.weapon], i, m * range(rng, 0.95, 1.05)));
-  if (boss) {
-    const k = level / BOSS_EVERY - 1;
-    const weapon = WEAPONS_BY_ID[BOSS_WEAPONS[k % BOSS_WEAPONS.length]];
-    const bossT: Template = { id: 'boss', name: BOSS_NAMES[k % BOSS_NAMES.length], hp: 450, power: 0.9, speed: 55, armor: 15, weapon: weapon.id, minLevel: 1, weight: 0, uniform: '#5a1a1a', helmet: '#d4a017' };
-    units.push(makeEnemy(bossT, weapon, units.length, m, 1.6, bossT.name));
-  }
+  if (boss) units.push(makeBoss(level, units.length, m));
   return units;
+}
+
+function makeBoss(level: number, index: number, m: number): BattleUnit {
+  // le boss du palier de 5 niveaux en cours (niveaux 1 à 5 → premier boss)
+  const k = Math.max(0, Math.ceil(level / BOSS_EVERY) - 1);
+  const weapon = WEAPONS_BY_ID[BOSS_WEAPONS[k % BOSS_WEAPONS.length]];
+  const bossT: Template = { id: 'boss', name: BOSS_NAMES[k % BOSS_NAMES.length], hp: 450, power: 0.9, speed: 55, armor: 15, weapon: weapon.id, minLevel: 1, weight: 0, uniform: '#5a1a1a', helmet: '#d4a017' };
+  return makeEnemy(bossT, weapon, index, m, 1.6, bossT.name);
 }
 
 export function buildTrainingEnemies(avgLevel: number, squadSize: number, rng: Rng = Math.random): BattleUnit[] {
@@ -93,7 +96,7 @@ export function buildTrainingEnemies(avgLevel: number, squadSize: number, rng: R
 /** Dégâts ajoutés à chaque seconde de combat par l'épouvantail (il part de 0). */
 export const SCARECROW_GROWTH = 0.3;
 
-export function buildScarecrow(): BattleUnit {
+export function buildScarecrow(index = 0): BattleUnit {
   const look: SpriteLook = { skin: '#d9b56a', hair: '#8a6a2a', uniform: '#8a6a2a', helmet: '#5a4a2a', weaponId: 'fists' };
   const stats: CombatStats = {
     maxHp: 1,
@@ -112,7 +115,43 @@ export function buildScarecrow(): BattleUnit {
     berserk: false,
     secondWind: false,
   };
-  return { id: 'scarecrow', team: 'enemy', name: 'Épouvantail', look, scale: 1.2, stats, dummy: { growth: SCARECROW_GROWTH } };
+  return { id: index ? `scarecrow${index}` : 'scarecrow', team: 'enemy', name: 'Épouvantail', look, scale: 1.2, stats, dummy: { growth: SCARECROW_GROWTH } };
+}
+
+/** Adversaire de simulation : épouvantail, mélange réaliste selon le niveau, ou un seul type de troupe. */
+export type SimOpponent = 'scarecrow' | 'mixed' | string;
+
+export interface SimulationConfig {
+  opponent: SimOpponent;
+  count: number;
+  level: number;
+  boss: boolean;
+}
+
+export const SIM_MAX_ENEMIES = 18;
+export const SIM_ENEMY_TYPES: { id: string; name: string }[] = TEMPLATES.map((t) => ({ id: t.id, name: t.name }));
+
+export function simulationPool(cfg: SimulationConfig): string[] {
+  if (cfg.opponent === 'scarecrow') return ['Épouvantail'];
+  const pool = cfg.opponent === 'mixed' ? TEMPLATES.filter((t) => t.minLevel <= cfg.level) : TEMPLATES.filter((t) => t.id === cfg.opponent);
+  return pool.map((t) => t.name);
+}
+
+/**
+ * Ennemis d'une simulation, à la puissance de campagne du niveau choisi. Le boss remplace
+ * l'un des ennemis, comme en campagne ; un type imposé ignore le niveau minimal d'apparition.
+ */
+export function buildSimulationEnemies(cfg: SimulationConfig, rng: Rng): BattleUnit[] {
+  const count = Math.min(Math.max(1, Math.round(cfg.count)), SIM_MAX_ENEMIES);
+  if (cfg.opponent === 'scarecrow') return Array.from({ length: count }, (_, i) => buildScarecrow(i));
+  const level = Math.max(1, Math.round(cfg.level));
+  const m = levelPower(level);
+  const troops = cfg.boss ? count - 1 : count;
+  const forced = TEMPLATES.find((t) => t.id === cfg.opponent);
+  const templates = forced ? Array.from({ length: troops }, () => forced) : compose(level, troops, rng);
+  const units = templates.map((t, i) => makeEnemy(t, WEAPONS_BY_ID[t.weapon], i, m * range(rng, 0.95, 1.05)));
+  if (cfg.boss) units.push(makeBoss(level, units.length, m));
+  return units;
 }
 
 export function previewCampaign(level: number): { count: number; boss: boolean; names: string[] } {
@@ -120,5 +159,3 @@ export function previewCampaign(level: number): { count: number; boss: boolean; 
   const names = [...new Set(units.map((u) => u.name))];
   return { count: units.length, boss: isBossLevel(level), names };
 }
-
-

@@ -1,15 +1,18 @@
 import { RARITIES, RARITY_ORDER, WEAPONS_BY_ID } from '../game/data';
-import { sellWeapons } from '../game/roster';
+import { equipWeapon, sellWeapons, sortSquad } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
+import { weaponForSoldier } from '../game/stats';
 import type { Rarity, WeaponItem } from '../game/types';
 import { h } from './dom';
-import { fmt, toast, weaponIcon } from './components';
+import { confirmDialog, fmt, getSquadSort, openModal, rarityTag, soldierSprite, toast, undoable, weaponDelta, weaponIcon } from './components';
+import { goTo } from './nav';
+import { openSoldier } from './roster';
 
 const RARITY_PLURAL: Record<Rarity, string> = { common: 'communes', rare: 'rares', epic: 'épiques', legendary: 'légendaires' };
 
 const selected = new Set<string>();
 
-// Armes vendables : non équipées (une arme équipée se vend depuis la fiche du soldat, avec confirmation)
+// Armes vendables en lot : non équipées (une arme équipée se vend une par une, depuis sa tuile)
 function sellableWeapons(rarity?: Rarity): WeaponItem[] {
   const st = getState();
   const equipped = new Set(st.soldiers.map((s) => s.weaponUid));
@@ -24,18 +27,84 @@ function weaponsValue(items: WeaponItem[]): number {
   return items.reduce((sum, w) => sum + RARITIES[WEAPONS_BY_ID[w.defId].rarity].sellValue, 0);
 }
 
-function sellItems(items: WeaponItem[], label: string): void {
+async function sellItems(items: WeaponItem[]): Promise<void> {
   if (items.length === 0) return;
   const gold = weaponsValue(items);
-  if (!confirm(`${label} : vendre ${items.length} arme${items.length > 1 ? 's' : ''} pour ${fmt(gold)} or ?`)) return;
-  const earned = mutate((st) => sellWeapons(st, items.map((w) => w.uid)));
+  const counts = new Map<string, number>();
+  for (const w of items) counts.set(w.defId, (counts.get(w.defId) ?? 0) + 1);
+  const ok = await confirmDialog({
+    title: `Vendre ${items.length} arme${items.length > 1 ? 's' : ''} ?`,
+    body: [
+      h('p', null, `Vous recevrez ${fmt(gold)} or. Vous pourrez annuler juste après.`),
+      h('ul', { class: 'confirm-list' }, [...counts].map(([defId, n]) => h('li', { style: `color:${RARITIES[WEAPONS_BY_ID[defId].rarity].color}` }, `${WEAPONS_BY_ID[defId].name}${n > 1 ? ` ×${n}` : ''}`))),
+    ],
+    confirm: `Vendre (+${fmt(gold)} or)`,
+  });
+  if (!ok) return;
   for (const w of items) selected.delete(w.uid);
-  toast(`${items.length} arme${items.length > 1 ? 's' : ''} vendue${items.length > 1 ? 's' : ''} (+${fmt(earned)} or).`);
+  undoable(
+    (st) => sellWeapons(st, items.map((w) => w.uid)),
+    (earned) => `${items.length} arme${items.length > 1 ? 's' : ''} vendue${items.length > 1 ? 's' : ''} (+${fmt(earned)} or).`,
+  );
+}
+
+// Choisir le soldat qui recevra l'arme, en voyant ce que chacun y gagne ou y perd
+function openEquip(uid: string): void {
+  openModal((close) => {
+    const st = getState();
+    const item = st.weapons.find((w) => w.uid === uid);
+    if (!item) {
+      queueMicrotask(close);
+      return h('div');
+    }
+    const def = WEAPONS_BY_ID[item.defId];
+    // Les soldats sans arme d'abord : ce sont eux qui en ont le plus besoin
+    const soldiers = sortSquad(st, getSquadSort()).sort((a, b) => Number(!!a.weaponUid) - Number(!!b.weaponUid));
+    return h(
+      'div',
+      { class: 'detail' },
+      h('button', { class: 'modal-close', onclick: close, title: 'Fermer (Échap)' }, '×'),
+      h('h2', { style: `color:${RARITIES[def.rarity].color}` }, `Équiper : ${def.name}`),
+      h('p', { class: 'muted small' }, "Choisissez un soldat. Si l'arme est déjà portée par quelqu'un, les deux soldats échangent leurs armes."),
+      soldiers.length === 0
+        ? h('p', { class: 'muted' }, 'Aucun soldat dans l’escouade.')
+        : h(
+            'div',
+            { class: 'equip-list' },
+            soldiers.map((s) => {
+              const current = weaponForSoldier(s, st.weapons);
+              const holds = s.weaponUid === uid;
+              return h(
+                'button',
+                {
+                  class: `equip-item${holds ? ' active' : ''}`,
+                  disabled: holds,
+                  onclick: () => {
+                    mutate((state) => equipWeapon(state, s.id, uid));
+                    toast(`${s.name} s'équipe de : ${def.name}.`, 'good');
+                    close();
+                  },
+                },
+                h('div', { class: 'row-portrait' }, soldierSprite(st, s)),
+                h(
+                  'span',
+                  { class: 'equip-info' },
+                  h('b', null, s.name),
+                  h('small', null, rarityTag(s.rarity), ` · Niv. ${s.level} · `, s.weaponUid ? current.name : h('span', { class: 'warn' }, 'sans arme')),
+                  holds ? h('small', null, 'Équipée actuellement') : weaponDelta(s, current, def),
+                ),
+              );
+            }),
+          ),
+    );
+  });
 }
 
 export function renderArsenal(): HTMLElement {
   const st = getState();
-  const owners = new Map(st.soldiers.filter((s) => s.weaponUid).map((s) => [s.weaponUid as string, s.name]));
+  const owners = new Map(st.soldiers.filter((s) => s.weaponUid).map((s) => [s.weaponUid as string, s]));
+  const unarmed = st.soldiers.filter((s) => !s.weaponUid).length;
+  const free = st.weapons.length - owners.size;
   const sellable = sellableWeapons();
   const sellableUids = new Set(sellable.map((w) => w.uid));
   for (const uid of [...selected]) if (!sellableUids.has(uid)) selected.delete(uid);
@@ -49,22 +118,26 @@ export function renderArsenal(): HTMLElement {
     'section',
     null,
     h('h2', null, `Arsenal (${st.weapons.length})`),
-    h('p', { class: 'muted' }, "Les armes s'obtiennent en campagne. Équipez-les depuis la fiche d'un soldat, ou vendez les doublons pour de l'or."),
+    h('p', { class: 'muted' }, "Les armes s'obtiennent en campagne. Équipez-les avec « Équiper sur… », ou vendez les doublons pour de l'or."),
+    unarmed > 0 &&
+      free > 0 &&
+      h(
+        'p',
+        { class: 'warn' },
+        `${unarmed} soldat${unarmed > 1 ? 's' : ''} sans arme alors que ${free} arme${free > 1 ? 's sont disponibles' : ' est disponible'}. `,
+        h('button', { class: 'link', onclick: () => goTo('roster') }, "Aller à l'escouade"),
+      ),
     st.weapons.length > 0 &&
       h(
         'div',
         { class: 'bulk-bar' },
-        h('span', { class: 'muted small' }, 'Vente par rareté :'),
+        h('span', { class: 'muted small' }, 'Vendre les armes non équipées :'),
         RARITY_ORDER.map((r) => {
           const items = sellableWeapons(r);
           return h(
             'button',
-            {
-              class: 'btn btn-small',
-              disabled: items.length === 0,
-              onclick: () => sellItems(items, `Armes ${RARITY_PLURAL[r]}`),
-            },
-            `Vendre les ${RARITY_PLURAL[r]} (${items.length})`,
+            { class: 'btn btn-small btn-rarity', disabled: items.length === 0, onclick: () => void sellItems(items) },
+            `${RARITY_PLURAL[r]} (${items.length})`,
           );
         }),
       ),
@@ -78,7 +151,7 @@ export function renderArsenal(): HTMLElement {
           { class: 'row' },
           h('button', { class: 'btn btn-small', onclick: () => { for (const w of sellable) selected.add(w.uid); refresh(); } }, 'Tout sélectionner'),
           h('button', { class: 'btn btn-small', onclick: () => { selected.clear(); refresh(); } }, 'Vider'),
-          h('button', { class: 'btn btn-small btn-gold', onclick: () => sellItems(selection, 'Sélection') }, `Vendre la sélection (+${fmt(weaponsValue(selection))} or)`),
+          h('button', { class: 'btn btn-small btn-gold', onclick: () => void sellItems(selection) }, `Vendre la sélection (+${fmt(weaponsValue(selection))} or)`),
         ),
       ),
     sorted.length === 0
@@ -117,22 +190,32 @@ export function renderArsenal(): HTMLElement {
                 statItem('Dégâts', fmt(def.damage)),
                 statItem('Portée', fmt(def.range)),
                 statItem('Recharge', `${fmt(def.cooldown, 2)} s`),
+                statItem('DPS', fmt(def.damage / def.cooldown, 1)),
                 def.aoe ? statItem('Zone', fmt(def.aoe)) : false,
                 def.armor ? statItem('Armure', `+${fmt(def.armor)}`) : false,
               ),
-              h('small', { class: owner ? 'owner' : 'muted' }, `${info.label} · ${owner ? `Équipée par ${owner}` : 'Disponible'}`),
+              owner
+                ? h('small', { class: 'owner' }, `${info.label} · Équipée par `, h('button', { class: 'link', title: 'Ouvrir la fiche du soldat', onclick: () => openSoldier(owner.id) }, owner.name))
+                : h('small', { class: 'muted' }, `${info.label} · Disponible`),
               h(
-                'button',
-                {
-                  class: 'btn btn-small weapon-sell',
-                  onclick: () => {
-                    if (owner && !confirm(`${def.name} est équipée par ${owner}. Vendre quand même ?`)) return;
-                    const gold = mutate((state) => sellWeapons(state, [w.uid]));
-                    selected.delete(w.uid);
-                    toast(`${def.name} vendue (+${gold} or).`);
+                'div',
+                { class: 'weapon-actions' },
+                h('button', { class: 'btn btn-small', disabled: st.soldiers.length === 0, onclick: () => openEquip(w.uid) }, 'Équiper sur…'),
+                h(
+                  'button',
+                  {
+                    class: `btn btn-small${owner ? ' btn-danger' : ''}`,
+                    title: owner ? `${owner.name} se retrouvera à mains nues` : undefined,
+                    onclick: () => {
+                      selected.delete(w.uid);
+                      undoable(
+                        (state) => sellWeapons(state, [w.uid]),
+                        (gold) => `${def.name} vendue (+${gold} or).${owner ? ` ${owner.name} se bat désormais à mains nues.` : ''}`,
+                      );
+                    },
                   },
-                },
-                `Vendre ${info.sellValue} or`,
+                  `Vendre ${info.sellValue} or`,
+                ),
               ),
             );
           }),

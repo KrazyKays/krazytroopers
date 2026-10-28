@@ -49,6 +49,8 @@ export interface GameState {
   nextId: number;
   stats: { won: number; lost: number; deaths: number; kills: number };
   battleSpeed: BattleSpeed;
+  /** Le joueur a masqué le bandeau « prochaine étape ». */
+  hideGuide: boolean;
 }
 
 export type WeaponShape =

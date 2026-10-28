@@ -2,7 +2,7 @@ import { AUTO_PICK_KILLS, MAX_LEVEL, MAX_UPGRADES, PICK_EVERY_LEVELS, PITY_LIMIT
 import { getState, mutate, parseSave, replaceState, resetState, serializeState } from '../game/state';
 import { BATTLE_SPEEDS } from '../game/types';
 import { h } from './dom';
-import { toast } from './components';
+import { confirmDialog, toast } from './components';
 
 function exportSave(): void {
   const blob = new Blob([serializeState()], { type: 'application/json' });
@@ -20,10 +20,19 @@ function importSave(file: File): void {
       toast('Fichier de sauvegarde invalide.', 'bad');
       return;
     }
-    if (!confirm('Remplacer la partie actuelle par cette sauvegarde ?')) return;
-    replaceState(data);
-    toast('Sauvegarde importée.', 'good');
+    void confirmDialog({ title: 'Importer cette sauvegarde ?', body: 'La partie actuelle sera remplacée. Pensez à l’exporter avant si vous voulez la garder.', confirm: 'Importer', danger: true }).then((ok) => {
+      if (!ok) return;
+      replaceState(data);
+      toast('Sauvegarde importée.', 'good');
+    });
   });
+}
+
+async function newGame(): Promise<void> {
+  const ok = await confirmDialog({ title: 'Nouvelle partie ?', body: 'Toute la progression sera effacée définitivement : soldats, armes, or et campagne.', confirm: 'Tout effacer', danger: true });
+  if (!ok) return;
+  resetState();
+  toast('Nouvelle partie.');
 }
 
 export function renderSettings(): HTMLElement {
@@ -39,6 +48,30 @@ export function renderSettings(): HTMLElement {
     h(
       'div',
       { class: 'panel' },
+      h(
+        'p',
+        null,
+        'La boucle de jeu : ',
+        h('b', null, 'recrutez'),
+        ' des soldats, ',
+        h('b', null, 'choisissez leurs améliorations'),
+        ' et ',
+        h('b', null, 'équipez-les'),
+        ', puis ',
+        h('b', null, 'combattez'),
+        " pour gagner XP, or et armes. Attention : un soldat tombé au combat est perdu pour toujours.",
+      ),
+      h(
+        'label',
+        { class: 'sim-check row' },
+        h('input', { type: 'checkbox', checked: !st.hideGuide, onchange: (e) => mutate((g) => { g.hideGuide = !(e.target as HTMLInputElement).checked; }) }),
+        ' Afficher le guide « prochaine étape » en haut de l’écran',
+      ),
+    ),
+    h(
+      'details',
+      { class: 'panel rules-details' },
+      h('summary', null, 'Règles détaillées'),
       h(
         'ul',
         { class: 'rules' },
@@ -94,7 +127,7 @@ export function renderSettings(): HTMLElement {
         { class: 'row' },
         h('button', { class: 'btn', onclick: exportSave }, 'Exporter'),
         h('button', { class: 'btn', onclick: () => fileInput.click() }, 'Importer'),
-        h('button', { class: 'btn btn-danger', onclick: () => { if (confirm('Effacer définitivement la partie ?')) { resetState(); toast('Nouvelle partie.'); } } }, 'Nouvelle partie'),
+        h('button', { class: 'btn btn-danger', onclick: () => void newGame() }, 'Nouvelle partie'),
         fileInput,
       ),
     ),

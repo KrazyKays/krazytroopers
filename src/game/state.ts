@@ -16,6 +16,7 @@ export function createInitialState(): GameState {
     nextId: 1,
     stats: { won: 0, lost: 0, deaths: 0, kills: 0 },
     battleSpeed: 1,
+    hideGuide: false,
   };
   for (const defId of START_WEAPONS) st.weapons.push({ uid: `w${st.nextId++}`, defId });
   return st;
@@ -41,6 +42,7 @@ export function parseSave(raw: string): GameState | null {
       ? {
           ...data,
           battleSpeed: data.battleSpeed ?? 1,
+          hideGuide: !!data.hideGuide,
           freePulls: typeof data.freePulls === 'number' ? data.freePulls : 0,
           // Sauvegardes antérieures au compteur global : on reprend les éliminations encore connues des soldats.
           stats: {
@@ -62,6 +64,12 @@ export function parseSave(raw: string): GameState | null {
 
 let state: GameState = createInitialState();
 const listeners = new Set<() => void>();
+// Incrémenté à chaque modification enregistrée : permet de savoir si une annulation est encore sûre
+let version = 0;
+
+export function getVersion(): number {
+  return version;
+}
 
 export function getState(): GameState {
   return state;
@@ -100,6 +108,7 @@ export function refresh(): void {
 }
 
 export function commit(): void {
+  version++;
   save();
   refresh();
 }

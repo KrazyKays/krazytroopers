@@ -3,7 +3,7 @@ import { recruit } from '../game/roster';
 import { getState, mutate } from '../game/state';
 import type { Soldier } from '../game/types';
 import { h } from './dom';
-import { openModal, soldierCard, toast } from './components';
+import { fmt, openModal, soldierCard, toast } from './components';
 import { openSoldier } from './roster';
 
 let lastPull: Soldier[] = [];
@@ -40,11 +40,26 @@ function showReveal(): void {
       { class: 'detail' },
       h('button', { class: 'modal-close', onclick: close, title: 'Fermer' }, '×'),
       h('h2', null, lastPull.length > 1 ? 'Nouvelles recrues' : 'Nouvelle recrue'),
-      h('p', { class: 'muted' }, 'Cliquez sur une recrue pour choisir ses améliorations.'),
+      h('p', { class: 'muted' }, 'Cliquez sur une recrue pour choisir ses améliorations et lui donner une arme.'),
       h('div', { class: `grid reveal-grid${lastPull.length === 1 ? ' single' : ''}` }, cards),
-      h('div', { class: 'detail-actions' }, h('button', { class: 'btn', onclick: close }, 'Continuer')),
+      h(
+        'div',
+        { class: 'detail-actions' },
+        h('button', { class: 'btn', onclick: close }, 'Continuer'),
+        h('button', { class: 'btn btn-gold', onclick: () => { close(); openSoldier(lastPull[0].id); } }, 'Améliorer les recrues'),
+      ),
     );
   });
+}
+
+function pullButton(mode: 'one' | 'ten', label: string, cost: number, gold: number, bonus?: string): HTMLElement {
+  const missing = cost - gold;
+  return h(
+    'button',
+    { class: 'btn btn-big btn-pull', disabled: missing > 0, onclick: () => doPull(mode) },
+    label,
+    h('small', null, missing > 0 ? `Il manque ${fmt(missing)} or` : bonus),
+  );
 }
 
 export function renderRecruit(): HTMLElement {
@@ -58,14 +73,12 @@ export function renderRecruit(): HTMLElement {
     h(
       'div',
       { class: 'recruit-box' },
-      h(
-        'button',
-        { class: 'btn btn-big btn-gold', disabled: st.freePulls <= 0, onclick: () => doPull('free') },
-        st.freePulls > 0 ? `Tirage gratuit (${st.freePulls} restant${st.freePulls > 1 ? 's' : ''})` : 'Plus de tirage gratuit',
-      ),
-      h('button', { class: 'btn btn-big', disabled: st.gold < PULL_COST, onclick: () => doPull('one') }, `Recruter x1 (${PULL_COST} or)`),
-      h('button', { class: 'btn btn-big', disabled: st.gold < PULL10_COST, onclick: () => doPull('ten') }, `Recruter x10 (${PULL10_COST} or)`),
+      st.freePulls > 0 &&
+        h('button', { class: 'btn btn-big btn-gold', onclick: () => doPull('free') }, `Tirage gratuit (${st.freePulls} restant${st.freePulls > 1 ? 's' : ''})`),
+      pullButton('one', `Recruter x1 — ${PULL_COST} or`, PULL_COST, st.gold),
+      pullButton('ten', `Recruter x10 — ${PULL10_COST} or`, PULL10_COST, st.gold, `1 soldat offert (${fmt(PULL_COST * 10 - PULL10_COST)} or d'économie)`),
     ),
+    st.gold < PULL_COST && st.freePulls <= 0 && h('p', { class: 'muted small' }, "Pas assez d'or ? Les combats (entraînement et campagne) en rapportent, tout comme le renvoi de soldats et la vente d'armes."),
     h(
       'div',
       { class: 'panel' },

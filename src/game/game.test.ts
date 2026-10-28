@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { simulate } from './battle';
-import { launchBattle, launchSimulation } from './combat';
+import { DEFAULT_SIMULATION, estimateBattle, estimateSimulation, launchBattle, launchSimulation } from './combat';
 import { AUTO_PICK_KILLS, LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PITY_LIMIT, PULL_COST, START_FREE_PULLS, START_GOLD, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADE_PICKS, UPGRADES, WEAPONS_BY_ID } from './data';
-import { buildCampaignEnemies } from './enemies';
+import { buildCampaignEnemies, SIM_MAX_ENEMIES } from './enemies';
 import { mulberry32 } from './rng';
 import { autoPickAll, autoPickUnlocked, createSoldier, entitledPicks, equipWeapon, grantLevelPicks, legionOfHonor, pickUpgrade, recruit, releaseSoldier, releaseSoldiers, sellWeapon, sellWeapons, sortSquad, toggleFavorite } from './roster';
 import { createInitialState } from './state';
@@ -284,14 +284,14 @@ describe('simulation', () => {
   it('ne modifie ni la progression ni les soldats', () => {
     const st = stateWithSoldiers(3, 2);
     const before = JSON.stringify(st);
-    const launch = launchSimulation(st, st.soldiers.map((s) => s.id), 7);
+    const launch = launchSimulation(st, st.soldiers.map((s) => s.id), DEFAULT_SIMULATION, 7);
     expect(launch.ok).toBe(true);
     expect(JSON.stringify(st)).toBe(before);
   });
 
   it("garde l'épouvantail debout et ses coups plus forts en fin de combat", () => {
     const st = stateWithSoldiers(2, 1);
-    const launch = launchSimulation(st, st.soldiers.map((s) => s.id), 7);
+    const launch = launchSimulation(st, st.soldiers.map((s) => s.id), DEFAULT_SIMULATION, 7);
     if (!launch.ok) throw new Error(launch.error);
     const sc = launch.units.length - 1;
     expect(launch.result.frames.every((f) => f.p[sc * 3 + 2] === 1)).toBe(true);
@@ -300,6 +300,68 @@ describe('simulation', () => {
     for (const f of launch.result.frames) for (const e of f.e) if (e.t === 'hit' && e.a === sc && !e.splash) hits.push(e);
     expect(hits.length).toBeGreaterThan(2);
     expect(hits[hits.length - 1].dmg).toBeGreaterThan(hits[0].dmg);
+  });
+
+  it('aligne le nombre d’ennemis choisi par le joueur, boss compris', () => {
+    const st = stateWithSoldiers(2, 1);
+    const ids = st.soldiers.map((s) => s.id);
+    for (const count of [1, 7, SIM_MAX_ENEMIES]) {
+      const launch = launchSimulation(st, ids, { opponent: 'mixed', count, level: 4, boss: true }, 3);
+      if (!launch.ok) throw new Error(launch.error);
+      const enemies = launch.units.filter((u) => u.team === 'enemy');
+      expect(enemies).toHaveLength(count);
+      expect(enemies.filter((u) => u.scale > 1)).toHaveLength(1);
+      expect(new Set(launch.units.map((u) => u.id)).size).toBe(launch.units.length);
+    }
+    const dummies = launchSimulation(st, ids, { ...DEFAULT_SIMULATION, count: 3 }, 3);
+    expect(dummies.ok && dummies.units.filter((u) => u.dummy)).toHaveLength(3);
+  });
+
+  it('impose un seul type de troupe, même avant son niveau d’apparition', () => {
+    const st = stateWithSoldiers(1, 1);
+    const launch = launchSimulation(st, [st.soldiers[0].id], { opponent: 'rocket', count: 4, level: 1, boss: false }, 3);
+    if (!launch.ok) throw new Error(launch.error);
+    expect(launch.units.filter((u) => u.team === 'enemy').every((u) => u.name === 'Lance-roquettes')).toBe(true);
+  });
+
+  it('estime les chances sans toucher à la progression', () => {
+    const st = stateWithSoldiers(3, 20);
+    const before = JSON.stringify(st);
+    const easy = estimateSimulation(st, st.soldiers.map((s) => s.id), { opponent: 'grunt', count: 1, level: 1, boss: false }, 10, 1);
+    const hard = estimateSimulation(st, st.soldiers.map((s) => s.id), { opponent: 'mixed', count: SIM_MAX_ENEMIES, level: 40, boss: true }, 10, 1);
+    if (!easy.ok || !hard.ok) throw new Error('estimation impossible');
+    expect(easy.wins + easy.losses + easy.timeouts).toBe(10);
+    expect(easy.wins).toBe(10);
+    expect(hard.wins).toBeLessThan(easy.wins);
+    expect(JSON.stringify(st)).toBe(before);
+  });
+});
+
+describe('estimation avant un vrai combat', () => {
+  it('ne consomme ni entraînement ni progression', () => {
+    const st = stateWithSoldiers(3, 5);
+    const before = JSON.stringify(st);
+    const ids = st.soldiers.map((s) => s.id);
+    const training = estimateBattle(st, { mode: 'training', squad: ids }, 10, 1);
+    const campaign = estimateBattle(st, { mode: 'campaign', squad: ids, level: 1 }, 10, 1);
+    if (!training.ok || !campaign.ok) throw new Error('estimation impossible');
+    expect(training.wins + training.losses + training.timeouts).toBe(10);
+    expect(campaign.wins + campaign.losses + campaign.timeouts).toBe(10);
+    expect(JSON.stringify(st)).toBe(before);
+  });
+
+  it('donne moins de chances face à un niveau de campagne bien plus élevé', () => {
+    const st = stateWithSoldiers(3, 5);
+    const ids = st.soldiers.map((s) => s.id);
+    const easy = estimateBattle(st, { mode: 'campaign', squad: ids, level: 1 }, 10, 1);
+    const hard = estimateBattle(st, { mode: 'campaign', squad: ids, level: 40 }, 10, 1);
+    if (!easy.ok || !hard.ok) throw new Error('estimation impossible');
+    expect(hard.wins).toBeLessThan(easy.wins);
+    expect(hard.avgDeaths).toBeGreaterThan(easy.avgDeaths);
+  });
+
+  it('refuse une escouade vide', () => {
+    expect(estimateBattle(createInitialState(), { mode: 'training', squad: [] }).ok).toBe(false);
   });
 });
 

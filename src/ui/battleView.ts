@@ -14,9 +14,19 @@ interface UnitView {
   facing: 1 | -1;
 }
 
-/** `report` est nul pour une simulation : pas de récompense ni de progression à annoncer. */
-export function openBattle(title: string, units: BattleUnit[], result: BattleResult, report: BattleReport | null, onClose: () => void): void {
+export interface ReplayAction {
+  label: string;
+  run: () => void;
+}
+
+/**
+ * `report` est nul pour une simulation : pas de récompense ni de progression à annoncer.
+ * `onReplay`, s'il est fourni, ajoute un bouton pour enchaîner aussitôt un nouveau combat avec la même escouade.
+ */
+export function openBattle(title: string, units: BattleUnit[], result: BattleResult, report: BattleReport | null, onClose: () => void, onReplay?: ReplayAction): void {
   const frames = result.frames;
+  // Le bouton qui a lancé le combat garde sinon le focus sous l'overlay : Espace ou Entrée le relanceraient
+  (document.activeElement as HTMLElement | null)?.blur();
   let speed: BattleSpeed = getState().battleSpeed;
   let idx = 0;
   let timer: number | undefined;
@@ -161,20 +171,43 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
       `x${s}`,
     ),
   );
-  const skipBtn = h('button', { class: 'btn btn-small', onclick: skip }, 'Passer');
+  const skipBtn = h('button', { class: 'btn btn-small', onclick: skip, title: 'Afficher directement le résultat (Espace ou Échap)' }, 'Passer');
   const controls = h('div', { class: 'battle-controls' }, speedButtons, skipBtn);
+
+  // Clavier : Espace/Échap passe le combat, puis Échap ferme et Entrée enchaîne (ou ferme)
+  const onKey = (e: KeyboardEvent) => {
+    if (!finished) {
+      if (e.key === ' ' || e.key === 'Escape') {
+        e.preventDefault();
+        skip();
+      }
+    } else if (e.key === 'Escape') {
+      close();
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (replay) replay();
+      else close();
+    }
+  };
+  document.addEventListener('keydown', onKey);
 
   function close(): void {
     window.clearTimeout(timer);
+    document.removeEventListener('keydown', onKey);
     overlay.remove();
     onClose();
   }
+
+  const replay = onReplay && (() => { close(); onReplay.run(); });
 
   function finish(): void {
     if (finished) return;
     finished = true;
     controls.remove();
-    overlay.appendChild(report ? resultPanel(report, close) : simulationPanel(units, result, close));
+    const action = replay && onReplay && { label: onReplay.label, run: replay };
+    const panel = report ? resultPanel(report, close, action) : simulationPanel(units, result, close, action);
+    overlay.appendChild(panel);
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 
   overlay.append(h('div', { class: 'battle-top' }, h('h2', null, title), controls), hud, arena);
@@ -184,38 +217,69 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
   timer = window.setTimeout(step, 600);
 }
 
-function simulationPanel(units: BattleUnit[], result: BattleResult, close: () => void): HTMLElement {
-  const rows = units
-    .filter((u) => u.team === 'ally')
-    .map((u) => {
-      const t = result.totals[u.id];
-      const dead = result.deadIds.includes(u.id);
-      return h(
-        'tr',
-        { class: dead ? 'died' : '' },
-        h('td', null, u.name),
-        h('td', null, dead ? 'Tombé' : 'Debout'),
-        h('td', null, fmt(Math.round(t.dealt))),
-        h('td', null, fmt(Math.round(t.taken))),
-      );
-    });
+function simulationPanel(units: BattleUnit[], result: BattleResult, close: () => void, replay?: ReplayAction): HTMLElement {
+  const duration = result.ticks * DT;
+  const last = result.frames[result.frames.length - 1];
+  const enemies = units.map((u, i) => ({ u, i })).filter(({ u }) => u.team === 'enemy');
+  const dummies = enemies.every(({ u }) => u.dummy);
+  const enemiesLeft = enemies.filter(({ i }) => last.p[i * 3 + 2] > 0).length;
+  const allies = units.filter((u) => u.team === 'ally');
+  const fallen = result.deadIds.length;
+
+  const title = dummies
+    ? result.winner === 'timeout' ? "L'escouade a tenu jusqu'au bout" : `Escouade tombée après ${duration.toFixed(1)} s`
+    : result.winner === 'ally' ? 'Victoire simulée' : result.winner === 'timeout' ? 'Temps écoulé — défaite simulée' : 'Défaite simulée';
+  const won = result.winner === 'ally' || (dummies && result.winner === 'timeout');
+
+  const rows = allies.map((u) => {
+    const t = result.totals[u.id];
+    const dead = result.deadIds.includes(u.id);
+    return h(
+      'tr',
+      { class: dead ? 'died' : '' },
+      h('td', null, u.name),
+      h('td', null, dead ? 'Tombé' : 'Debout'),
+      h('td', null, fmt(result.kills[u.id] ?? 0)),
+      h('td', null, fmt(Math.round(t.dealt))),
+      h('td', null, (t.dealt / Math.max(duration, DT)).toFixed(1)),
+      h('td', null, fmt(Math.round(t.taken))),
+      h('td', null, fmt(Math.round(t.healed))),
+    );
+  });
   return h(
     'div',
-    { class: 'result' },
-    h('h2', null, 'Simulation terminée'),
-    h('p', { class: 'muted' }, `Durée : ${(result.ticks * DT).toFixed(1)} s. Aucune récompense, aucune perte.`),
+    { class: `result ${won ? 'won' : 'lost'}` },
+    h('h2', null, title),
+    h(
+      'p',
+      { class: 'muted' },
+      `Durée : ${duration.toFixed(1)} s · Pertes : ${fallen} / ${allies.length}`,
+      !dummies && ` · Ennemis restants : ${enemiesLeft} / ${enemies.length}`,
+      '. Aucune récompense, aucune perte réelle.',
+    ),
     h(
       'table',
       { class: 'stats-table' },
-      h('tr', null, h('th', null, 'Soldat'), h('th', null, 'État'), h('th', null, 'Infligés'), h('th', null, 'Subis')),
+      h('tr', null, h('th', null, 'Soldat'), h('th', null, 'État'), h('th', null, 'Élim.'), h('th', null, 'Infligés'), h('th', null, 'DPS'), h('th', null, 'Subis'), h('th', null, 'Soins')),
       rows,
     ),
-    h('button', { class: 'btn btn-big', onclick: close }, 'Retour'),
+    resultActions(close, replay),
   );
 }
 
-function resultPanel(report: BattleReport, close: () => void): HTMLElement {
+function resultActions(close: () => void, replay?: ReplayAction): HTMLElement {
+  return h(
+    'div',
+    { class: 'row result-actions' },
+    replay && h('button', { class: 'btn btn-big btn-gold', onclick: replay.run, title: 'Entrée' }, replay.label),
+    h('button', { class: 'btn btn-big', onclick: close, title: 'Échap' }, 'Retour'),
+  );
+}
+
+function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAction): HTMLElement {
   const title = report.won ? 'Victoire !' : report.timeout ? 'Temps écoulé — défaite' : 'Défaite';
+  const survivors = new Set(report.soldiers.filter((s) => !s.died).map((s) => s.id));
+  const picks = getState().soldiers.filter((s) => survivors.has(s.id) && s.picksLeft > 0).length;
   const rows = report.soldiers.map((s) =>
     h(
       'li',
@@ -258,6 +322,7 @@ function resultPanel(report: BattleReport, close: () => void): HTMLElement {
       report.gold > 0 && h('span', { class: 'reward' }, `+${fmt(report.gold)} or`),
       report.weapon && h('span', { class: 'reward', style: `color:${RARITIES[report.weapon.rarity].color}` }, weaponIcon(report.weapon), ` ${report.weapon.name} obtenu !`),
     ),
-    h('button', { class: 'btn btn-big', onclick: close }, 'Retour'),
+    picks > 0 && h('p', { class: 'pill pill-pick result-hint' }, `${picks} soldat${picks > 1 ? 's ont' : ' a'} de nouvelles améliorations à choisir (onglet Escouade).`),
+    resultActions(close, replay),
   );
 }
