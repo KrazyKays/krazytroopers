@@ -59,8 +59,8 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
     setTimeout(() => f.remove(), 700);
   }
 
-  function projectile(ax: number, ay: number, bx: number, by: number): void {
-    const p = h('div', { class: 'projectile', style: `${pos(ax, ay - 12)};transition:none` });
+  function projectile(ax: number, ay: number, bx: number, by: number, cls = 'projectile'): void {
+    const p = h('div', { class: cls, style: `${pos(ax, ay - 12)};transition:none` });
     p.style.zIndex = '999';
     arena.appendChild(p);
     void p.offsetWidth;
@@ -99,6 +99,11 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
           const ally = units[ev.b].team === 'ally';
           floater(bx, by, ev.crit ? `${ev.dmg}!` : String(ev.dmg), `${ally ? 'dmg-ally' : 'dmg-enemy'}${ev.crit ? ' crit' : ''}`);
         }
+      } else if (ev.t === 'heal') {
+        const bx = frame.p[ev.b * 3];
+        const by = frame.p[ev.b * 3 + 1];
+        if (ev.a !== ev.b) projectile(frame.p[ev.a * 3], frame.p[ev.a * 3 + 1], bx, by, 'projectile heal');
+        if (shown++ < 8) floater(bx, by, `+${ev.amount}`, 'heal');
       } else if (ev.t === 'blast') {
         blast(frame.p[ev.b * 3], frame.p[ev.b * 3 + 1], ev.r);
       } else if (ev.t === 'miss') {
@@ -283,9 +288,13 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
   const rows = report.soldiers.map((s) =>
     h(
       'li',
-      { class: s.died ? 'died' : '' },
+      { class: s.died ? 'died' : s.wounded ? 'wounded' : '' },
       h('b', null, s.name),
-      s.died ? ' est mort au combat : il quitte l’escouade.' : ` +${fmt(s.xpGained)} XP`,
+      s.died
+        ? ' est mort au combat : il quitte l’escouade.'
+        : s.wounded
+          ? report.mode === 'training' ? ' a été mis K.O. : il s’en remettra (pas d’XP).' : ' est tombé mais a été rapatrié grâce à la victoire (pas d’XP).'
+          : ` +${fmt(s.xpGained)} XP`,
       s.levelsGained > 0 && h('span', { class: 'levelup' }, ` Niveau ${s.newLevel} !`),
       s.kills > 0 && h('span', { class: 'muted' }, ` (${s.kills} élimination${s.kills > 1 ? 's' : ''})`),
     ),
@@ -313,6 +322,16 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
     { class: `result ${report.won ? 'won' : 'lost'}` },
     h('h2', null, title),
     report.firstClear && h('p', { class: 'levelup' }, `Niveau ${report.level} de la campagne terminé !`),
+    report.daily &&
+      h('p', { class: report.won ? 'levelup' : 'muted' }, report.won ? `Défi « ${report.daily.modifier.name} » relevé ! Série : ${report.daily.streak} jour${report.daily.streak > 1 ? 's' : ''}.` : `Défi « ${report.daily.modifier.name} » perdu : la série repart à zéro.`),
+    report.survival &&
+      h(
+        'p',
+        { class: report.survival.ended ? 'muted' : 'levelup' },
+        report.survival.ended
+          ? `Expédition terminée après ${report.survival.wave} vague${report.survival.wave > 1 ? 's' : ''} : la moitié du pot est versée.`
+          : `Vague ${report.survival.wave} remportée ! Pot : ${fmt(report.survival.pot)} or. Continuez, ou encaissez depuis l'onglet Combat.`,
+      ),
     h('ul', { class: 'result-list' }, rows),
     toggle,
     detailsBox,
@@ -321,7 +340,15 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
       { class: 'result-rewards' },
       report.gold > 0 && h('span', { class: 'reward' }, `+${fmt(report.gold)} or`),
       report.weapon && h('span', { class: 'reward', style: `color:${RARITIES[report.weapon.rarity].color}` }, weaponIcon(report.weapon), ` ${report.weapon.name} obtenu !`),
+      report.freePulls > 0 && h('span', { class: 'reward' }, `+${report.freePulls} tirage${report.freePulls > 1 ? 's' : ''} gratuit${report.freePulls > 1 ? 's' : ''}`),
     ),
+    report.unlocked.length > 0 &&
+      h(
+        'div',
+        { class: 'unlock-box' },
+        h('b', null, report.unlocked.length > 1 ? 'Nouveautés débloquées !' : 'Nouveauté débloquée !'),
+        h('ul', null, report.unlocked.map((u) => h('li', null, h('b', null, u.label), ` : ${u.desc}`))),
+      ),
     picks > 0 && h('p', { class: 'pill pill-pick result-hint' }, `${picks} soldat${picks > 1 ? 's ont' : ' a'} de nouvelles améliorations à choisir (onglet Escouade).`),
     resultActions(close, replay),
   );

@@ -25,6 +25,18 @@ export function weaponIcon(w: WeaponDef): HTMLElement {
   return html(weaponSvg(w));
 }
 
+/** Bonus propres à une arme, en clair (vide si elle n'en a pas). */
+export function weaponTraits(w: WeaponDef): string[] {
+  const pct = (v: number) => `${Math.round(v * 100)} %`;
+  return [
+    w.heal && 'Soigne l’allié le plus blessé',
+    w.lifesteal && `Vol de vie ${pct(w.lifesteal)}`,
+    w.crit && `Critique +${pct(w.crit)}`,
+    w.dodge && `Esquive +${pct(w.dodge)}`,
+    w.speedPct && `Vitesse +${pct(w.speedPct)}`,
+  ].filter((t): t is string => !!t);
+}
+
 export function xpBar(s: Soldier): HTMLElement {
   const max = s.level >= MAX_LEVEL;
   const pct = max ? 100 : (s.xp / xpForNext(s.level)) * 100;

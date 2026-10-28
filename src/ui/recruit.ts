@@ -1,9 +1,10 @@
 import { PITY_LIMIT, PULL10_COST, PULL_COST, RARITIES, RARITY_ORDER, WEAPON_PULL10_COST, WEAPON_PULL_COST, WEAPONS, WEAPONS_BY_ID } from '../game/data';
+import { isUnlocked, unlockLevel } from '../game/progress';
 import { buyWeapons, recruit } from '../game/roster';
 import { getState, mutate } from '../game/state';
 import type { WeaponDef } from '../game/types';
 import { h } from './dom';
-import { fmt, soldierCard, toast, weaponIcon } from './components';
+import { fmt, soldierCard, toast, weaponIcon, weaponTraits } from './components';
 import { playGacha } from './gacha';
 import { goTo } from './nav';
 import { openSoldier } from './roster';
@@ -39,8 +40,9 @@ function doPull(mode: SoldierMode): void {
   });
 }
 
-function weaponFront(def: WeaponDef, isNew: boolean): HTMLElement {
+export function weaponFront(def: WeaponDef, isNew: boolean): HTMLElement {
   const info = RARITIES[def.rarity];
+  const traits = weaponTraits(def);
   return h(
     'div',
     { class: 'weapon-card gacha-weapon', style: `--rc:${info.color}` },
@@ -48,7 +50,8 @@ function weaponFront(def: WeaponDef, isNew: boolean): HTMLElement {
     h('b', { class: 'weapon-name', style: `color:${info.color}` }, def.name),
     h('div', { class: 'weapon-art' }, weaponIcon(def)),
     h('small', { class: 'rarity-tag', style: `color:${info.color}` }, info.label),
-    h('small', { class: 'muted' }, `DPS ${fmt(def.damage / def.cooldown, 1)} · Portée ${fmt(def.range)}${def.armor ? ` · Armure +${def.armor}` : ''}`),
+    h('small', { class: 'muted' }, `${def.heal ? 'Soins/s' : 'DPS'} ${fmt(def.damage / def.cooldown, 1)} · Portée ${fmt(def.range)}${def.armor ? ` · Armure +${def.armor}` : ''}`),
+    traits.length > 0 && h('small', { class: 'weapon-traits' }, traits.join(' · ')),
   );
 }
 
@@ -121,6 +124,7 @@ function banner(cls: string, emblem: HTMLElement, title: string, tagline: string
 export function renderRecruit(): HTMLElement {
   const st = getState();
   const legendaries = WEAPONS.filter((w) => w.droppable && w.rarity === 'legendary');
+  const armoryOpen = isUnlocked(st, 'armory');
   return h(
     'section',
     null,
@@ -150,9 +154,11 @@ export function renderRecruit(): HTMLElement {
         'Armurerie',
         'Les armes achetées rejoignent votre arsenal, prêtes à être équipées.',
         ratesBar(),
-        pityMeter(st.weaponPity, 'Arme'),
+        armoryOpen && pityMeter(st.weaponPity, 'Arme'),
         h('div', { class: 'banner-featured', title: 'Armes légendaires à gagner' }, legendaries.map((w) => h('div', { class: 'featured-weapon', title: w.name }, weaponIcon(w)))),
-        h(
+        !armoryOpen &&
+          h('p', { class: 'locked-note' }, `🔒 L'armurerie ouvre après le niveau ${unlockLevel('armory')} de la campagne, qui offre déjà une arme garantie.`),
+        armoryOpen && h(
           'div',
           { class: 'recruit-box' },
           pullButton(`Acheter ×1 — ${WEAPON_PULL_COST} or`, WEAPON_PULL_COST, st.gold, () => doWeaponPull('one')),

@@ -1,5 +1,6 @@
-import { AUTO_PICK_KILLS, LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PICK_EVERY_LEVELS, RARITIES, RARITY_ORDER, TRAINING_PER_SOLDIER, UPGRADES_BY_ID, WEAPONS_BY_ID, SQUAD_MAX } from '../game/data';
-import { autoPickAll, autoPickUnlocked, equipWeapon, legionOfHonor, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite } from '../game/roster';
+import { AUTO_PICK_KILLS, LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PICK_EVERY_LEVELS, RARITIES, RARITY_ORDER, TRAINING_PER_SOLDIER, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
+import { squadMax } from '../game/progress';
+import { autoPickAll, autoPickUnlocked, buyTraining, equipWeapon, legionOfHonor, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite, trainingCost } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
 import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
 import type { GameState, Rarity, Soldier } from '../game/types';
@@ -79,7 +80,7 @@ export function renderRoster(): HTMLElement {
       h('h2', null, `Escouade (${st.soldiers.length})`),
       firstPending && !selectMode && h('button', { class: 'btn btn-small btn-gold', onclick: () => openSoldier(firstPending.id) }, `Choisir les améliorations (${pending})`),
     ),
-    h('p', { class: 'muted' }, `Cliquez sur un soldat pour choisir ses améliorations et son arme. Engagez jusqu'à ${SQUAD_MAX} soldats par combat.`),
+    h('p', { class: 'muted' }, `Cliquez sur un soldat pour choisir ses améliorations et son arme. Engagez jusqu'à ${squadMax(st)} soldats par combat.`),
     squadToolbar(st),
     h(
       'div',
@@ -259,6 +260,25 @@ export function openSoldier(id: string): void {
         xpBar(s),
         s.level < MAX_LEVEL && h('div', { class: 'muted small' }, `${fmt(s.xp)} / ${fmt(xpForNext(s.level))} XP`),
         h('div', { class: 'muted small' }, `${s.kills} ennemi${s.kills > 1 ? 's' : ''} éliminé${s.kills > 1 ? 's' : ''}`),
+        h(
+          'div',
+          { class: 'row training-row' },
+          h('span', { class: 'muted small' }, `${s.trainingsLeft} entraînement${s.trainingsLeft > 1 ? 's' : ''} restant${s.trainingsLeft > 1 ? 's' : ''}`),
+          s.level < MAX_LEVEL &&
+            h(
+              'button',
+              {
+                class: 'btn btn-small',
+                disabled: st.gold < trainingCost(s),
+                title: 'Un entraînement de plus pour ce soldat : un moyen de convertir l’or en XP',
+                onclick: () => {
+                  const res = mutate((state) => buyTraining(state, s.id));
+                  if (typeof res === 'string') toast(res, 'bad');
+                },
+              },
+              `+1 entraînement (${fmt(trainingCost(s))} or)`,
+            ),
+        ),
       ),
     );
 

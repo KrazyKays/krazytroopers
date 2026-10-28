@@ -1,6 +1,8 @@
 import {
   AUTO_PICK_KILLS,
   FIRST_NAMES,
+  FORGE_FEE,
+  FORGE_INPUT,
   HAIR_COLORS,
   HELMET_COLORS,
   LEGEND_UPGRADES,
@@ -20,9 +22,11 @@ import {
   UPGRADE_CHOICES,
   UPGRADE_PICKS,
   WEAPONS,
+  WEAPONS_BY_ID,
   WEAPON_PULL10_COST,
   WEAPON_PULL_COST,
 } from './data';
+import { isUnlocked, unlockLevel } from './progress';
 import { nextUid } from './state';
 import { computeStats, dps, weaponForSoldier } from './stats';
 import { pick, range, shuffle, weightedPick, type Rng } from './rng';
@@ -103,6 +107,7 @@ export type WeaponPullResult = { ok: true; weapons: WeaponItem[] } | { ok: false
 
 // Armurerie : même tirage que le recrutement (taux et garantie), avec un compteur de garantie distinct
 export function buyWeapons(st: GameState, mode: 'one' | 'ten', rng: Rng = Math.random): WeaponPullResult {
+  if (!isUnlocked(st, 'armory')) return { ok: false, error: `L'armurerie ouvre après le niveau ${unlockLevel('armory')} de la campagne.` };
   const cost = mode === 'ten' ? WEAPON_PULL10_COST : WEAPON_PULL_COST;
   if (st.gold < cost) return { ok: false, error: "Pas assez d'or." };
   st.gold -= cost;
@@ -194,6 +199,51 @@ export function sellWeapon(st: GameState, uid: string): number {
 
 export function sellWeapons(st: GameState, uids: readonly string[]): number {
   return uids.reduce((sum, uid) => sum + sellWeapon(st, uid), 0);
+}
+
+/** Prix d'un entraînement supplémentaire : l'or excédentaire devient de l'XP, plus cher à haut niveau. */
+export function trainingCost(s: Soldier): number {
+  return 40 + 12 * s.level;
+}
+
+export function buyTraining(st: GameState, soldierId: string): number | string {
+  const s = st.soldiers.find((x) => x.id === soldierId);
+  if (!s) return 'Soldat introuvable.';
+  if (s.level >= MAX_LEVEL) return 'Un soldat au niveau maximum n’a plus besoin d’entraînement.';
+  const cost = trainingCost(s);
+  if (st.gold < cost) return "Pas assez d'or.";
+  st.gold -= cost;
+  s.trainingsLeft++;
+  return cost;
+}
+
+/** Armes non équipées d'une rareté donnée : la matière première de la forge. */
+export function forgeableWeapons(st: GameState, rarity: Rarity): WeaponItem[] {
+  const equipped = new Set(st.soldiers.map((s) => s.weaponUid));
+  return st.weapons.filter((w) => !equipped.has(w.uid) && WEAPONS_BY_ID[w.defId]?.rarity === rarity);
+}
+
+export type ForgeResult = { ok: true; weapon: WeaponItem; consumed: string[] } | { ok: false; error: string };
+
+// Forge : FORGE_INPUT armes non équipées d'une rareté donnent une arme au hasard de la rareté supérieure.
+// Le joueur peut choisir les armes à fondre ; à défaut, les doublons les plus nombreux partent en premier.
+export function forgeWeapons(st: GameState, rarity: Rarity, uids?: readonly string[], rng: Rng = Math.random): ForgeResult {
+  if (!isUnlocked(st, 'forge')) return { ok: false, error: `La forge se débloque au niveau ${unlockLevel('forge')} de la campagne.` };
+  if (rarity === 'legendary') return { ok: false, error: 'Les armes légendaires ne peuvent pas être fusionnées.' };
+  const pool = forgeableWeapons(st, rarity);
+  const copies = new Map<string, number>();
+  for (const w of pool) copies.set(w.defId, (copies.get(w.defId) ?? 0) + 1);
+  const chosen = uids ? pool.filter((w) => uids.includes(w.uid)) : [...pool].sort((a, b) => copies.get(b.defId)! - copies.get(a.defId)!).slice(0, FORGE_INPUT);
+  if (chosen.length !== FORGE_INPUT) return { ok: false, error: `Il faut ${FORGE_INPUT} armes ${RARITIES[rarity].label.toLowerCase()}s non équipées.` };
+  const fee = FORGE_FEE[rarity];
+  if (st.gold < fee) return { ok: false, error: "Pas assez d'or." };
+  st.gold -= fee;
+  const consumed = chosen.map((w) => w.uid);
+  st.weapons = st.weapons.filter((w) => !consumed.includes(w.uid));
+  const next = RARITY_ORDER[RARITY_ORDER.indexOf(rarity) + 1];
+  const weapon = { uid: nextUid(st, 'w'), defId: weaponOfRarity(rng, next).id };
+  st.weapons.push(weapon);
+  return { ok: true, weapon, consumed };
 }
 
 export const NAME_MAX_LENGTH = 24;

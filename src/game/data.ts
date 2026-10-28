@@ -1,6 +1,7 @@
 import type { Mods, Rarity, TitleId, UpgradeDef, WeaponDef } from './types';
 
-export const SQUAD_MAX = 5;
+/** Places dans l'escouade au départ ; la campagne en débloque d'autres (voir UNLOCKS). */
+export const SQUAD_BASE = 4;
 export const TRAINING_PER_SOLDIER = 3;
 export const PULL_COST = 100;
 export const PULL10_COST = 900;
@@ -16,6 +17,37 @@ export const PICK_EVERY_LEVELS = 5;
 export const MAX_UPGRADES = 8;
 // Ennemis éliminés au total (toutes escouades confondues) pour débloquer le choix automatique des améliorations.
 export const AUTO_PICK_KILLS = 500;
+
+export type UnlockId = 'armory' | 'simulation' | 'squad5' | 'daily' | 'forge' | 'survival' | 'squad6';
+
+export interface UnlockDef {
+  id: UnlockId;
+  /** Niveau de campagne à terminer pour débloquer. */
+  level: number;
+  label: string;
+  desc: string;
+}
+
+// Seuils de progression : chaque palier de campagne ouvre une nouvelle mécanique, pour ne pas tout montrer d'emblée
+export const UNLOCKS: UnlockDef[] = [
+  { id: 'armory', level: 1, label: 'Armurerie', desc: "Achetez des armes au hasard dans l'onglet Recruter." },
+  { id: 'simulation', level: 2, label: 'Simulation', desc: 'Testez votre escouade sans risque face aux adversaires de votre choix.' },
+  { id: 'squad5', level: 5, label: "5e place d'escouade", desc: "Engagez jusqu'à 5 soldats par combat." },
+  { id: 'daily', level: 6, label: 'Défi du jour', desc: 'Un combat unique chaque jour, avec une règle spéciale et de grosses récompenses.' },
+  { id: 'forge', level: 8, label: 'Forge', desc: "Fusionnez 3 armes d'une même rareté en une arme de la rareté supérieure." },
+  { id: 'survival', level: 12, label: 'Mode Survie', desc: 'Enchaînez les vagues sans soins complets : encaissez vos gains ou risquez tout.' },
+  { id: 'squad6', level: 20, label: "6e place d'escouade", desc: "Engagez jusqu'à 6 soldats par combat." },
+];
+
+/** Chaque premier passage d'un boss offre un tirage de soldat gratuit. */
+export const BOSS_FREE_PULLS = 1;
+
+/** Forge : nombre d'armes d'une même rareté à fondre, et coût en or selon la rareté de départ. */
+export const FORGE_INPUT = 3;
+export const FORGE_FEE: Record<Exclude<Rarity, 'legendary'>, number> = { common: 20, rare: 60, epic: 150 };
+
+/** Survie : part des PV max regagnée entre deux vagues. */
+export const SURVIVAL_REST_HEAL = 0.25;
 
 export const TITLES: Record<TitleId, { label: string; desc: string }> = {
   legende: { label: 'Légende', desc: 'Atteint le niveau maximum' },
@@ -42,24 +74,32 @@ export const RARITY_ORDER: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
 
 export const WEAPONS: WeaponDef[] = [
   { id: 'fists', name: 'Poings nus', rarity: 'common', damage: 6, range: 24, cooldown: 0.7, aoe: 0, shape: 'fists', color: '#d9b38c', droppable: false },
-  { id: 'knife', name: 'Couteau', rarity: 'common', damage: 9, range: 26, cooldown: 0.55, aoe: 0, shape: 'knife', color: '#c8ccd0', droppable: true },
+  // Mêlée : le soldat doit traverser le feu ennemi, d'où des dégâts plus élevés et des bonus de survie propres à l'arme
+  { id: 'knife', name: 'Couteau', rarity: 'common', damage: 11, range: 26, cooldown: 0.5, aoe: 0, dodge: 0.08, speedPct: 0.2, shape: 'knife', color: '#c8ccd0', droppable: true },
   { id: 'pistol', name: 'Pistolet', rarity: 'common', damage: 11, range: 150, cooldown: 0.8, aoe: 0, shape: 'pistol', color: '#9aa0a6', droppable: true },
-  { id: 'shotgun', name: 'Fusil à pompe', rarity: 'rare', damage: 36, range: 90, cooldown: 1.6, aoe: 0, shape: 'shotgun', color: '#7a5a3a', droppable: true },
+  { id: 'crossbow', name: 'Arbalète', rarity: 'common', damage: 22, range: 230, cooldown: 1.5, aoe: 0, crit: 0.1, shape: 'crossbow', color: '#8a6a3a', droppable: true },
+  { id: 'shotgun', name: 'Fusil à pompe', rarity: 'rare', damage: 40, range: 95, cooldown: 1.5, aoe: 0, shape: 'shotgun', color: '#7a5a3a', droppable: true },
   { id: 'smg', name: 'Mitraillette', rarity: 'rare', damage: 8, range: 130, cooldown: 0.3, aoe: 0, shape: 'smg', color: '#6f7780', droppable: true },
   { id: 'rifle', name: "Fusil d'assaut", rarity: 'rare', damage: 13, range: 190, cooldown: 0.5, aoe: 0, shape: 'rifle', color: '#5d6b58', droppable: true },
-  { id: 'sword', name: 'Épée', rarity: 'rare', damage: 24, range: 28, cooldown: 0.9, aoe: 0, shape: 'sword', color: '#dfe6ee', droppable: true },
+  { id: 'revolver', name: 'Revolver', rarity: 'rare', damage: 30, range: 170, cooldown: 1.1, aoe: 0, crit: 0.15, shape: 'revolver', color: '#b08d57', droppable: true },
+  { id: 'sword', name: 'Épée', rarity: 'rare', damage: 26, range: 30, cooldown: 0.8, aoe: 0, lifesteal: 0.1, shape: 'sword', color: '#dfe6ee', droppable: true },
+  { id: 'spear', name: 'Hallebarde', rarity: 'rare', damage: 22, range: 50, cooldown: 0.85, aoe: 0, armor: 6, shape: 'spear', color: '#a9b4bd', droppable: true },
   { id: 'launcher', name: 'Lance-grenades', rarity: 'rare', damage: 30, range: 180, cooldown: 1.8, aoe: 45, shape: 'launcher', color: '#6a7a4a', droppable: true },
   { id: 'flamer', name: 'Lance-flammes', rarity: 'epic', damage: 9, range: 80, cooldown: 0.3, aoe: 30, shape: 'flame', color: '#c0392b', droppable: true },
   { id: 'sniper', name: 'Fusil de précision', rarity: 'epic', damage: 70, range: 380, cooldown: 2, aoe: 0, shape: 'sniper', color: '#3d4a5c', droppable: true },
   { id: 'bazooka', name: 'Bazooka', rarity: 'epic', damage: 55, range: 230, cooldown: 1.8, aoe: 55, shape: 'bazooka', color: '#5a6b3c', droppable: true },
-  { id: 'axe', name: 'Hache de guerre', rarity: 'epic', damage: 48, range: 30, cooldown: 1.3, aoe: 35, shape: 'axe', color: '#b8bfc6', droppable: true },
-  { id: 'minigun', name: 'Minigun', rarity: 'legendary', damage: 12, range: 200, cooldown: 0.2, aoe: 0, shape: 'minigun', color: '#ffb02e', droppable: true },
+  { id: 'axe', name: 'Hache de guerre', rarity: 'epic', damage: 48, range: 30, cooldown: 1.3, aoe: 35, lifesteal: 0.1, shape: 'axe', color: '#b8bfc6', droppable: true },
+  { id: 'tesla', name: 'Canon Tesla', rarity: 'epic', damage: 24, range: 150, cooldown: 0.9, aoe: 40, shape: 'tesla', color: '#7fd4ff', droppable: true },
+  // Soigneur : ses « dégâts » deviennent des soins sur l'allié le plus blessé ; il ne tire que si personne n'est blessé
+  { id: 'medic', name: 'Fusil médical', rarity: 'epic', damage: 16, range: 160, cooldown: 1, aoe: 0, heal: true, shape: 'medic', color: '#e8f4f0', droppable: true },
+  { id: 'minigun', name: 'Minigun', rarity: 'legendary', damage: 11, range: 200, cooldown: 0.2, aoe: 0, shape: 'minigun', color: '#ffb02e', droppable: true },
   { id: 'railgun', name: 'Railgun', rarity: 'legendary', damage: 150, range: 450, cooldown: 3, aoe: 0, shape: 'railgun', color: '#3fe0ff', droppable: true },
-  { id: 'katana', name: 'Katana plasma', rarity: 'legendary', damage: 45, range: 30, cooldown: 0.8, aoe: 25, shape: 'katana', color: '#ff4fd8', droppable: true },
-  { id: 'buckler', name: 'Bouclier de fortune', rarity: 'common', damage: 7, range: 26, cooldown: 0.8, aoe: 0, armor: 8, shape: 'shield', color: '#8a6a4a', droppable: true },
-  { id: 'riot', name: 'Bouclier anti-émeute', rarity: 'rare', damage: 12, range: 26, cooldown: 0.9, aoe: 0, armor: 16, shape: 'shield', color: '#3d6e8f', droppable: true },
-  { id: 'tower', name: 'Bouclier blindé', rarity: 'epic', damage: 20, range: 28, cooldown: 1.1, aoe: 0, armor: 28, shape: 'shield', color: '#56654a', droppable: true },
-  { id: 'aegis', name: 'Égide', rarity: 'legendary', damage: 34, range: 30, cooldown: 1, aoe: 25, armor: 45, shape: 'shield', color: '#ffd45e', droppable: true },
+  { id: 'katana', name: 'Katana plasma', rarity: 'legendary', damage: 45, range: 30, cooldown: 0.8, aoe: 25, lifesteal: 0.15, speedPct: 0.2, shape: 'katana', color: '#ff4fd8', droppable: true },
+  { id: 'mortar', name: 'Obusier', rarity: 'legendary', damage: 80, range: 420, cooldown: 2.8, aoe: 70, shape: 'mortar', color: '#9c7a3c', droppable: true },
+  { id: 'buckler', name: 'Bouclier de fortune', rarity: 'common', damage: 8, range: 26, cooldown: 0.8, aoe: 0, armor: 12, shape: 'shield', color: '#8a6a4a', droppable: true },
+  { id: 'riot', name: 'Bouclier anti-émeute', rarity: 'rare', damage: 12, range: 26, cooldown: 0.9, aoe: 0, armor: 22, shape: 'shield', color: '#3d6e8f', droppable: true },
+  { id: 'tower', name: 'Bouclier blindé', rarity: 'epic', damage: 20, range: 28, cooldown: 1.1, aoe: 0, armor: 32, shape: 'shield', color: '#56654a', droppable: true },
+  { id: 'aegis', name: 'Égide', rarity: 'legendary', damage: 34, range: 30, cooldown: 1, aoe: 25, armor: 50, shape: 'shield', color: '#ffd45e', droppable: true },
 ];
 
 export const WEAPONS_BY_ID: Record<string, WeaponDef> = Object.fromEntries(WEAPONS.map((w) => [w.id, w]));

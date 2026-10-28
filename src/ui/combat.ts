@@ -1,21 +1,57 @@
-﻿import { SQUAD_MAX, TRAINING_PER_SOLDIER } from '../game/data';
-import { campaignGold, campaignXp, DEFAULT_SIMULATION, estimateBattle, estimateSimulation, ESTIMATE_RUNS, launchBattle, launchSimulation, trainingXp, TRAINING_GOLD, type BattleRequest, type SimulationEstimate } from '../game/combat';
-import { isBossLevel, previewCampaign, SIM_ENEMY_TYPES, SIM_MAX_ENEMIES, simulationPool, type SimulationConfig } from '../game/enemies';
+﻿import { SURVIVAL_REST_HEAL, TRAINING_PER_SOLDIER, type UnlockId } from '../game/data';
+import {
+  campaignGold,
+  campaignXp,
+  cashOutSurvival,
+  dailyDone,
+  dailyGold,
+  DEFAULT_SIMULATION,
+  estimateBattle,
+  estimateSimulation,
+  ESTIMATE_RUNS,
+  launchBattle,
+  launchSimulation,
+  survivalWaveGold,
+  trainingGold,
+  trainingXp,
+  type BattleRequest,
+  type SimulationEstimate,
+} from '../game/combat';
+import {
+  buildDailyEnemies,
+  dailyKey,
+  dailyLevel,
+  dailyModifier,
+  isBossLevel,
+  previewCampaign,
+  previewUnits,
+  SIM_ENEMY_TYPES,
+  SIM_MAX_ENEMIES,
+  simulationPool,
+  survivalBaseLevel,
+  survivalWaveLevel,
+  type SimulationConfig,
+} from '../game/enemies';
+import { isUnlocked, squadMax, unlockLevel } from '../game/progress';
 import { sortSquad } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
+import { computeStats, weaponForSoldier } from '../game/stats';
 import type { GameState, Soldier } from '../game/types';
 import { h } from './dom';
 import { openBattle } from './battleView';
-import { fmt, getSquadSort, squadToolbar, squadView, toast } from './components';
+import { confirmDialog, fmt, getSquadSort, squadToolbar, squadView, toast } from './components';
 import { goTo } from './nav';
 import { openSoldier } from './roster';
 
-type Mode = 'training' | 'campaign' | 'simulation';
+export type CombatMode = 'training' | 'campaign' | 'daily' | 'survival' | 'simulation';
 
-let mode: Mode = 'training';
+let mode: CombatMode = 'training';
+
+/** Modes soumis à un seuil de campagne. */
+const MODE_UNLOCK: Partial<Record<CombatMode, UnlockId>> = { daily: 'daily', survival: 'survival', simulation: 'simulation' };
 
 /** Ouvre l'onglet Combat sur un mode donné (utilisé par le guide). */
-export function openCombat(m: Mode): void {
+export function openCombat(m: CombatMode): void {
   mode = m;
   if (m === 'campaign') campaignPick = null;
   goTo('combat');
@@ -24,14 +60,23 @@ export function openCombat(m: Mode): void {
 // Estimation d'un vrai combat : recalculée seulement si l'escouade, ses stats ou l'adversaire changent
 let battleEstimate: { key: string; value: SimulationEstimate } | null = null;
 
-function battleRequest(level: number): BattleRequest {
+function battleRequest(st: GameState, level: number): BattleRequest {
   const squad = [...selected];
-  return mode === 'training' ? { mode: 'training', squad } : { mode: 'campaign', squad, level };
+  switch (mode) {
+    case 'training':
+      return { mode: 'training', squad };
+    case 'daily':
+      return { mode: 'daily', squad };
+    case 'survival':
+      return { mode: 'survival', squad: st.survival?.squad ?? squad };
+    default:
+      return { mode: 'campaign', squad, level };
+  }
 }
 
 function currentBattleEstimate(st: GameState, req: BattleRequest): SimulationEstimate | null {
-  const soldiers = req.squad.map((id) => st.soldiers.find((s) => s.id === id)!);
-  const key = JSON.stringify([req, soldiers.map((s) => [s.level, s.upgrades, st.weapons.find((w) => w.uid === s.weaponUid)?.defId ?? null])]);
+  const soldiers = req.squad.map((id) => st.soldiers.find((s) => s.id === id)).filter((s): s is Soldier => !!s);
+  const key = JSON.stringify([req, dailyKey(), st.campaignLevel, st.survival, soldiers.map((s) => [s.level, s.upgrades, st.weapons.find((w) => w.uid === s.weaponUid)?.defId ?? null])]);
   if (battleEstimate?.key !== key) {
     const res = estimateBattle(st, req);
     if (!res.ok) return null;
@@ -94,6 +139,11 @@ function eligible(s: Soldier): boolean {
   return mode !== 'training' || s.trainingsLeft > 0;
 }
 
+const locked = (st: GameState): UnlockId | null => {
+  const id = MODE_UNLOCK[mode];
+  return id && !isUnlocked(st, id) ? id : null;
+};
+
 // Retire les soldats morts ou devenus inéligibles : la sélection survit ainsi d'un combat à l'autre
 function pruneSelection(st: GameState): void {
   for (const id of [...selected]) {
@@ -105,12 +155,18 @@ function pruneSelection(st: GameState): void {
 function autoSelect(st: GameState): void {
   selected.clear();
   const ready = st.soldiers.filter(eligible);
-  for (const s of sortSquad(st, getSquadSort(), ready).slice(0, SQUAD_MAX)) selected.add(s.id);
+  for (const s of sortSquad(st, getSquadSort(), ready).slice(0, squadMax(st))) selected.add(s.id);
 }
+
+const TITLES: Record<Exclude<CombatMode, 'simulation' | 'campaign'>, string> = { training: 'Entraînement', daily: 'Défi du jour', survival: 'Survie' };
 
 function launch(): void {
   const st = getState();
   pruneSelection(st);
+  if (mode === 'survival' && st.survival) {
+    launchFight(st, st.campaignLevel + 1);
+    return;
+  }
   if (selected.size === 0) {
     toast('Aucun soldat disponible dans la sélection.', 'bad');
     refresh();
@@ -131,27 +187,39 @@ function launch(): void {
     openBattle(title, run.units, run.result, null, () => refresh(), { label: 'Relancer', run: launch });
     return;
   }
-  const level = Math.min(campaignPick ?? st.campaignLevel + 1, st.campaignLevel + 1);
-  const res = mutate((state) => launchBattle(state, mode === 'training' ? { mode: 'training', squad } : { mode: 'campaign', squad, level }));
+  launchFight(st, Math.min(campaignPick ?? st.campaignLevel + 1, st.campaignLevel + 1));
+}
+
+function launchFight(st: GameState, level: number): void {
+  const wave = (st.survival?.wave ?? 0) + 1;
+  const res = mutate((state) => launchBattle(state, battleRequest(state, level)));
   if (!res.ok) {
     toast(res.error, 'bad');
     return;
   }
-  const title = mode === 'training' ? 'Entraînement' : `Campagne — niveau ${level}`;
+  const title = mode === 'campaign' ? `Campagne — niveau ${level}` : mode === 'survival' ? `Survie — vague ${wave}` : TITLES[mode as keyof typeof TITLES];
   // Les survivants restent sélectionnés : on peut enchaîner le combat suivant directement depuis l'écran de résultat
   const after = getState();
   pruneSelection(after);
-  const nextLevel = Math.min(campaignPick ?? after.campaignLevel + 1, after.campaignLevel + 1);
-  const replayLabel = mode === 'training' ? 'Nouvel entraînement' : nextLevel > level ? `Niveau suivant (${nextLevel})` : `Rejouer le niveau ${level}`;
-  openBattle(
-    title,
-    res.units,
-    res.result,
-    res.report,
-    // l'état est déjà enregistré : on rafraîchit simplement l'écran
-    () => refresh(),
-    selected.size > 0 ? { label: `${replayLabel} — ${selected.size} soldat${selected.size > 1 ? 's' : ''}`, run: launch } : undefined,
-  );
+  let replay: { label: string; run: () => void } | undefined;
+  if (mode === 'survival') {
+    if (after.survival) replay = { label: `Vague suivante (${after.survival.wave + 1}) — ${after.survival.squad.length} soldat${after.survival.squad.length > 1 ? 's' : ''}`, run: launch };
+  } else if (mode !== 'daily' && selected.size > 0) {
+    const nextLevel = Math.min(campaignPick ?? after.campaignLevel + 1, after.campaignLevel + 1);
+    const replayLabel = mode === 'training' ? 'Nouvel entraînement' : nextLevel > level ? `Niveau suivant (${nextLevel})` : `Rejouer le niveau ${level}`;
+    replay = { label: `${replayLabel} — ${selected.size} soldat${selected.size > 1 ? 's' : ''}`, run: launch };
+  }
+  // l'état est déjà enregistré : on rafraîchit simplement l'écran
+  openBattle(title, res.units, res.result, res.report, () => refresh(), replay);
+}
+
+async function cashOut(): Promise<void> {
+  const run = getState().survival;
+  if (!run) return;
+  const ok = await confirmDialog({ title: `Encaisser ${fmt(run.pot)} or ?`, body: `L'expédition s'arrête après ${run.wave} vague${run.wave > 1 ? 's' : ''} et tous les soldats rentrent indemnes.`, confirm: `Encaisser (+${fmt(run.pot)} or)` });
+  if (!ok) return;
+  const gold = mutate((st) => cashOutSurvival(st));
+  toast(`Expédition terminée : +${fmt(gold)} or.`, 'good');
 }
 
 function runEstimate(): void {
@@ -242,32 +310,120 @@ function simulationInfo(st: GameState): HTMLElement {
   );
 }
 
+function lockedInfo(id: UnlockId, title: string, text: string): HTMLElement {
+  return h(
+    'div',
+    { class: 'panel locked-panel' },
+    h('h3', null, `🔒 ${title}`),
+    h('p', null, text),
+    h('p', { class: 'muted' }, `Se débloque en terminant le niveau ${unlockLevel(id)} de la campagne.`),
+    h('button', { class: 'btn btn-small', onclick: () => { mode = 'campaign'; campaignPick = null; refresh(); } }, 'Aller à la campagne'),
+  );
+}
+
+function dailyInfo(st: GameState): HTMLElement {
+  const key = dailyKey();
+  const mod = dailyModifier(key);
+  const level = dailyLevel(st.campaignLevel);
+  const prev = previewUnits(buildDailyEnemies(key, level), mod.id === 'bosses');
+  const done = dailyDone(st, key);
+  const streakNext = st.dailyStreak + 1;
+  return h(
+    'div',
+    { class: 'panel daily-panel' },
+    h('h3', null, `Défi du jour : ${mod.name}`),
+    h('p', null, mod.desc),
+    h('p', null, `Puissance du niveau ${level} · ${prev.count} ennemis : ${prev.names.join(', ')}.`),
+    done
+      ? h('p', { class: 'good' }, `Défi du jour déjà tenté. Revenez demain pour un nouveau défi${st.dailyStreak > 0 ? ` et prolonger votre série (${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''})` : ''} !`)
+      : h('p', null, `Récompenses : ${fmt(dailyGold(level, streakNext))} or, 1 tirage gratuit, une arme de boss et ${fmt(campaignXp(level))} XP par survivant.`),
+    h('p', { class: 'muted small' }, `Une seule tentative par jour. Série en cours : ${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''} (bonus de +20 or par jour consécutif, jusqu'à 7). Une défaite remet la série à zéro et les soldats tombés meurent.`),
+  );
+}
+
+function survivalInfo(st: GameState): HTMLElement {
+  const run = st.survival;
+  if (!run) {
+    const base = survivalBaseLevel(st.campaignLevel);
+    return h(
+      'div',
+      { class: 'panel' },
+      h('h3', null, 'Survie'),
+      h('p', null, `Enchaînez des vagues de plus en plus fortes, en partant de la puissance du niveau ${base}. Chaque vague remportée ajoute de l'or au pot (${fmt(survivalWaveGold(base))} or pour la première), et toutes les 5 vagues un boss lâche une arme.`),
+      h('p', null, `Pas de soin complet entre les vagues : chaque soldat ne récupère que ${Math.round(SURVIVAL_REST_HEAL * 100)} % de ses PV. Les soldats tombés lors d'une vague gagnée sont rapatriés et quittent l'expédition.`),
+      h('p', { class: 'muted small' }, `Encaissez le pot quand vous voulez. En cas de défaite, vous ne gardez que la moitié du pot et les soldats tombés meurent. Record : vague ${st.bestWave}.`),
+    );
+  }
+  const soldiers = run.squad.map((id) => st.soldiers.find((s) => s.id === id)).filter((s): s is Soldier => !!s);
+  const nextLevel = survivalWaveLevel(run.wave + 1, st.campaignLevel);
+  return h(
+    'div',
+    { class: 'panel survival-panel' },
+    h('h3', null, `Expédition en cours : ${run.wave} vague${run.wave > 1 ? 's' : ''} remportée${run.wave > 1 ? 's' : ''}`),
+    h('p', null, h('b', { class: 'gold' }, `Pot : ${fmt(run.pot)} or`), ` · Prochaine vague : puissance du niveau ${nextLevel}${isBossLevel(run.wave + 1) ? ', avec un boss' : ''} (+${fmt(survivalWaveGold(nextLevel))} or).`),
+    h(
+      'ul',
+      { class: 'survival-hp' },
+      soldiers.map((s) => {
+        const max = computeStats(s, weaponForSoldier(s, st.weapons)).maxHp;
+        const hp = Math.min(max, run.hp[s.id] ?? max);
+        return h('li', null, h('span', null, s.name), h('div', { class: 'hpbar-inline' }, h('div', { class: 'hp-fill', style: `width:${(hp / max) * 100}%` })), h('small', { class: 'muted' }, `${fmt(hp)} / ${fmt(max)} PV`));
+      }),
+    ),
+    h('div', { class: 'row' }, h('button', { class: 'btn btn-gold', onclick: () => void cashOut() }, `Encaisser ${fmt(run.pot)} or`)),
+  );
+}
+
 export function renderCombat(): HTMLElement {
   const st = getState();
   pruneSelection(st);
   const nextLevel = st.campaignLevel + 1;
   const level = Math.min(campaignPick ?? nextLevel, nextLevel);
+  const max = squadMax(st);
 
+  const tab = (m: CombatMode, label: string) => {
+    const lock = MODE_UNLOCK[m];
+    const isLocked = !!lock && !isUnlocked(st, lock);
+    return h(
+      'button',
+      { class: `subtab${mode === m ? ' active' : ''}${isLocked ? ' locked' : ''}`, title: isLocked ? `Débloqué au niveau ${unlockLevel(lock!)} de la campagne` : undefined, onclick: () => { mode = m; refresh(); } },
+      isLocked ? `🔒 ${label}` : label,
+    );
+  };
+  const dailyReady = isUnlocked(st, 'daily') && !dailyDone(st);
   const tabs = h(
     'div',
     { class: 'subtabs' },
-    h('button', { class: `subtab${mode === 'training' ? ' active' : ''}`, onclick: () => { mode = 'training'; refresh(); } }, 'Entraînement'),
-    h('button', { class: `subtab${mode === 'campaign' ? ' active' : ''}`, onclick: () => { mode = 'campaign'; refresh(); } }, `Campagne (niveau ${nextLevel})`),
-    h('button', { class: `subtab${mode === 'simulation' ? ' active' : ''}`, onclick: () => { mode = 'simulation'; refresh(); } }, 'Simulation'),
+    tab('training', 'Entraînement'),
+    tab('campaign', `Campagne (niveau ${nextLevel})`),
+    h('span', { class: 'subtab-wrap' }, tab('daily', 'Défi du jour'), dailyReady && h('span', { class: 'badge', title: 'Défi du jour disponible' }, '!')),
+    tab('survival', st.survival ? `Survie (vague ${st.survival.wave + 1})` : 'Survie'),
+    tab('simulation', 'Simulation'),
   );
 
+  const lockId = locked(st);
   let info: HTMLElement;
-  if (mode === 'training') {
+  if (lockId === 'daily') {
+    info = lockedInfo(lockId, 'Défi du jour', 'Un combat unique par jour, avec une règle spéciale (horde, commando d’élite, deux boss…) et de grosses récompenses : or, tirage gratuit et arme de boss.');
+  } else if (lockId === 'survival') {
+    info = lockedInfo(lockId, 'Survie', 'Enchaînez les vagues avec les mêmes soldats, sans soin complet entre deux vagues : encaissez vos gains ou risquez tout pour la vague suivante.');
+  } else if (lockId === 'simulation') {
+    info = lockedInfo(lockId, 'Simulation', 'Testez votre escouade sans aucun risque face aux adversaires de votre choix, et estimez ses chances.');
+  } else if (mode === 'training') {
     const avg = selected.size ? [...selected].reduce((n, id) => n + (st.soldiers.find((s) => s.id === id)?.level ?? 1), 0) / selected.size : 1;
     info = h(
       'div',
       { class: 'panel' },
       h('h3', null, "Combat d'entraînement"),
-      h('p', null, `Affrontez des cibles adaptées au niveau de votre escouade pour gagner de l'expérience (environ ${fmt(trainingXp(avg))} XP par survivant, ${TRAINING_GOLD} or en cas de victoire).`),
-      h('p', { class: 'muted small' }, `Chaque soldat peut participer à ${TRAINING_PER_SOLDIER} entraînements dans sa vie. Un soldat vaincu meurt définitivement.`),
+      h('p', null, `Affrontez des cibles adaptées au niveau de votre escouade pour gagner de l'expérience (environ ${fmt(trainingXp(avg))} XP par soldat resté debout, ${fmt(trainingGold(avg))} or en cas de victoire).`),
+      h('p', { class: 'muted small' }, `Sans danger : un soldat mis K.O. à l'entraînement s'en remet, mais ne gagne pas d'XP. Chaque soldat a ${TRAINING_PER_SOLDIER} entraînements, et vous pouvez en acheter d'autres depuis sa fiche.`),
     );
   } else if (mode === 'simulation') {
     info = simulationInfo(st);
+  } else if (mode === 'daily') {
+    info = dailyInfo(st);
+  } else if (mode === 'survival') {
+    info = survivalInfo(st);
   } else {
     const prev = previewCampaign(level);
     const cleared = level <= st.campaignLevel;
@@ -287,23 +443,25 @@ export function renderCombat(): HTMLElement {
         null,
         cleared
           ? `Niveau déjà terminé : récompenses réduites (${fmt(campaignXp(level) / 2)} XP, ${fmt(campaignGold(level, false))} or, arme possible).`
-          : `Récompenses : ${fmt(campaignXp(level))} XP par survivant, ${fmt(campaignGold(level, true))} or et une arme garantie.`,
+          : `Récompenses : ${fmt(campaignXp(level))} XP par survivant, ${fmt(campaignGold(level, true))} or et une arme garantie${prev.boss ? ', améliorée par le boss, plus un tirage gratuit' : ''}.`,
       ),
-      h('p', { class: 'muted small' }, 'En cas de défaite, les soldats survivants gagnent un peu d’XP ; les soldats tombés meurent définitivement.'),
+      h('p', { class: 'muted small' }, 'En cas de victoire, les soldats tombés sont rapatriés (sans XP). En cas de défaite, les survivants gagnent un peu d’XP et les soldats tombés meurent définitivement.'),
     );
   }
 
+  const runActive = mode === 'survival' && !!st.survival;
   const picked = st.soldiers.filter((s) => selected.has(s.id));
   const unarmed = picked.filter((s) => !s.weaponUid);
-  const canLaunch = selected.size >= 1;
+  const blocked = !!lockId || (mode === 'daily' && dailyDone(st));
+  const canLaunch = !blocked && (runActive ? st.survival!.squad.some((id) => st.soldiers.some((s) => s.id === id)) : selected.size >= 1);
 
-  const squadPanel = h(
+  const squadPanel = runActive || lockId ? null : h(
     'div',
     null,
     h(
       'div',
       { class: 'section-head' },
-      h('h3', null, `Escouade engagée : ${selected.size} / ${SQUAD_MAX}`),
+      h('h3', null, `Escouade engagée : ${selected.size} / ${max}`),
       h(
         'div',
         { class: 'row' },
@@ -320,14 +478,14 @@ export function renderCombat(): HTMLElement {
           squadView(st, (s) => ({
             selected: selected.has(s.id),
             disabled: !eligible(s),
-            disabledReason: `${s.name} n'a plus d'entraînement disponible (il peut encore partir en campagne).`,
+            disabledReason: `${s.name} n'a plus d'entraînement disponible (achetez-en depuis sa fiche, ou partez en campagne).`,
             onclick: () => {
               if (!eligible(s)) {
                 toast(`${s.name} n'a plus d'entraînement disponible.`, 'bad');
                 return;
               }
               if (selected.has(s.id)) selected.delete(s.id);
-              else if (selected.size >= SQUAD_MAX) toast(`Maximum ${SQUAD_MAX} soldats par combat.`, 'bad');
+              else if (selected.size >= max) toast(`Maximum ${max} soldats par combat.`, 'bad');
               else selected.add(s.id);
               refresh();
             },
@@ -347,20 +505,26 @@ export function renderCombat(): HTMLElement {
       h(
         'p',
         { class: 'warn' },
-        'Tous vos soldats ont épuisé leurs entraînements. Ils peuvent encore partir en campagne. ',
+        'Tous vos soldats ont épuisé leurs entraînements. Achetez-en depuis leur fiche, ou partez en campagne. ',
         h('button', { class: 'link', onclick: () => { mode = 'campaign'; refresh(); } }, 'Passer à la campagne'),
       ),
   );
 
-  const launchBtn = h(
-    'button',
-    { class: 'btn btn-big btn-gold', disabled: !canLaunch, onclick: launch },
-    !canLaunch
-      ? 'Sélectionnez au moins un soldat'
-      : mode === 'training' ? "Lancer l'entraînement" : mode === 'simulation' ? 'Lancer la simulation' : `Lancer le niveau ${level}`,
-  );
-  const quickPick = !canLaunch && st.soldiers.some(eligible) && h('button', { class: 'btn btn-big', onclick: () => { autoSelect(st); refresh(); } }, 'Sélection auto');
-  const est = canLaunch && mode !== 'simulation' ? currentBattleEstimate(st, battleRequest(level)) : null;
+  const label =
+    mode === 'training' ? "Lancer l'entraînement"
+    : mode === 'simulation' ? 'Lancer la simulation'
+    : mode === 'daily' ? 'Relever le défi'
+    : mode === 'survival' ? (st.survival ? `Lancer la vague ${st.survival.wave + 1}` : "Partir en expédition")
+    : `Lancer le niveau ${level}`;
+  const launchBtn =
+    !lockId &&
+    h(
+      'button',
+      { class: 'btn btn-big btn-gold', disabled: !canLaunch, onclick: launch },
+      canLaunch ? label : mode === 'daily' && dailyDone(st) ? 'Revenez demain' : runActive ? "Plus aucun soldat dans l'expédition" : 'Sélectionnez au moins un soldat',
+    );
+  const quickPick = !canLaunch && !blocked && !runActive && st.soldiers.some(eligible) && h('button', { class: 'btn btn-big', onclick: () => { autoSelect(st); refresh(); } }, 'Sélection auto');
+  const est = canLaunch && mode !== 'simulation' ? currentBattleEstimate(st, battleRequest(st, level)) : null;
 
   return h(
     'section',
@@ -372,4 +536,3 @@ export function renderCombat(): HTMLElement {
     h('div', { class: 'launch-bar' }, est && estimateLine(est), h('div', { class: 'launch-buttons' }, quickPick, launchBtn)),
   );
 }
-

@@ -1,10 +1,13 @@
-import { RARITIES, RARITY_ORDER, WEAPONS_BY_ID } from '../game/data';
-import { equipWeapon, sellWeapons, sortSquad } from '../game/roster';
+import { FORGE_FEE, FORGE_INPUT, RARITIES, RARITY_ORDER, WEAPONS_BY_ID } from '../game/data';
+import { isUnlocked, unlockLevel } from '../game/progress';
+import { equipWeapon, forgeableWeapons, forgeWeapons, sellWeapons, sortSquad } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
 import { weaponForSoldier } from '../game/stats';
-import type { Rarity, WeaponItem } from '../game/types';
+import type { GameState, Rarity, WeaponItem } from '../game/types';
 import { h } from './dom';
-import { confirmDialog, fmt, getSquadSort, openModal, rarityTag, soldierSprite, toast, undoable, weaponDelta, weaponIcon } from './components';
+import { confirmDialog, fmt, getSquadSort, openModal, rarityTag, soldierSprite, toast, undoable, weaponDelta, weaponIcon, weaponTraits } from './components';
+import { playGacha } from './gacha';
+import { weaponFront } from './recruit';
 import { goTo } from './nav';
 import { openSoldier } from './roster';
 
@@ -100,6 +103,53 @@ function openEquip(uid: string): void {
   });
 }
 
+function forge(rarity: Rarity): void {
+  const known = new Set(getState().weapons.map((w) => w.defId));
+  const res = mutate((st) => forgeWeapons(st, rarity));
+  if (!res.ok) {
+    toast(res.error, 'bad');
+    return;
+  }
+  for (const uid of res.consumed) selected.delete(uid);
+  const def = WEAPONS_BY_ID[res.weapon.defId];
+  playGacha({
+    kind: 'weapon',
+    title: 'Forge',
+    items: [{ rarity: def.rarity, front: weaponFront(def, !known.has(def.id)) }],
+    actions: (close) => [h('button', { class: 'btn', onclick: close }, 'Continuer')],
+  });
+}
+
+// Forge : les doublons d'une rareté deviennent une arme de la rareté supérieure (seules les armes non équipées partent)
+function forgePanel(st: GameState): HTMLElement | false {
+  if (st.weapons.length === 0) return false;
+  if (!isUnlocked(st, 'forge')) {
+    return h('p', { class: 'muted small locked-note' }, `🔒 Forge : fusionnez ${FORGE_INPUT} armes d'une rareté en une arme de la rareté supérieure. Se débloque au niveau ${unlockLevel('forge')} de la campagne.`);
+  }
+  const rarities = RARITY_ORDER.filter((r): r is Exclude<Rarity, 'legendary'> => r !== 'legendary');
+  return h(
+    'div',
+    { class: 'bulk-bar forge-bar' },
+    h('span', { class: 'muted small' }, `Forge (${FORGE_INPUT} armes non équipées → 1 de rareté supérieure) :`),
+    rarities.map((r) => {
+      const have = forgeableWeapons(st, r).length;
+      const fee = FORGE_FEE[r];
+      const next = RARITY_ORDER[RARITY_ORDER.indexOf(r) + 1];
+      return h(
+        'button',
+        {
+          class: 'btn btn-small btn-rarity',
+          style: `--rc:${RARITIES[next].color}`,
+          disabled: have < FORGE_INPUT || st.gold < fee,
+          title: have < FORGE_INPUT ? `Il faut ${FORGE_INPUT} armes ${RARITY_PLURAL[r]} non équipées (vous en avez ${have}).` : st.gold < fee ? `Il manque ${fmt(fee - st.gold)} or.` : undefined,
+          onclick: () => forge(r),
+        },
+        `${RARITY_PLURAL[r]} (${have}/${FORGE_INPUT}) → ${RARITIES[next].label} · ${fee} or`,
+      );
+    }),
+  );
+}
+
 export function renderArsenal(): HTMLElement {
   const st = getState();
   const owners = new Map(st.soldiers.filter((s) => s.weaponUid).map((s) => [s.weaponUid as string, s]));
@@ -147,6 +197,7 @@ export function renderArsenal(): HTMLElement {
           );
         }),
       ),
+    forgePanel(st),
     selected.size > 0 &&
       h(
         'div',
@@ -200,6 +251,7 @@ export function renderArsenal(): HTMLElement {
                 def.aoe ? statItem('Zone', fmt(def.aoe)) : false,
                 def.armor ? statItem('Armure', `+${fmt(def.armor)}`) : false,
               ),
+              weaponTraits(def).length > 0 && h('small', { class: 'weapon-traits' }, weaponTraits(def).join(' · ')),
               owner
                 ? h('small', { class: 'owner' }, `${info.label} · Équipée par `, h('button', { class: 'link', title: 'Ouvrir la fiche du soldat', onclick: () => openSoldier(owner.id) }, owner.name))
                 : h('small', { class: 'muted' }, `${info.label} · Disponible`),

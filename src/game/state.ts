@@ -18,6 +18,10 @@ export function createInitialState(): GameState {
     stats: { won: 0, lost: 0, deaths: 0, kills: 0 },
     battleSpeed: 1,
     hideGuide: false,
+    lastDaily: null,
+    dailyStreak: 0,
+    survival: null,
+    bestWave: 0,
   };
   for (const defId of START_WEAPONS) st.weapons.push({ uid: `w${st.nextId++}`, defId });
   return st;
@@ -46,6 +50,10 @@ export function parseSave(raw: string): GameState | null {
           hideGuide: !!data.hideGuide,
           freePulls: typeof data.freePulls === 'number' ? data.freePulls : 0,
           weaponPity: typeof data.weaponPity === 'number' ? data.weaponPity : 0,
+          lastDaily: typeof data.lastDaily === 'string' ? data.lastDaily : null,
+          dailyStreak: typeof data.dailyStreak === 'number' ? data.dailyStreak : 0,
+          survival: data.survival ?? null,
+          bestWave: typeof data.bestWave === 'number' ? data.bestWave : 0,
           // Sauvegardes antérieures au compteur global : on reprend les éliminations encore connues des soldats.
           stats: {
             ...data.stats,

@@ -63,6 +63,18 @@ function weaponRects(w: WeaponDef): Rect[] {
       return [[9, 7, 11, 2, c], [9, 9, 3, 1, d]];
     case 'shield':
       return [[13, 4, 4, 8, c], [13, 4, 4, 1, '#ffffff55'], [14, 7, 2, 2, d], [13, 12, 4, 1, d]];
+    case 'crossbow':
+      return [[10, 8, 7, 1, wood], [16, 6, 1, 5, c], [15, 6, 1, 1, c], [15, 10, 1, 1, c], [11, 9, 1, 1, d]];
+    case 'revolver':
+      return [[11, 8, 4, 1, c], [12, 7, 2, 1, d], [11, 9, 1, 2, wood]];
+    case 'spear':
+      return [[11, 1, 1, 10, wood], [11, 0, 1, 1, c], [12, 1, 2, 3, c], [10, 2, 1, 1, c]];
+    case 'medic':
+      return [[10, 8, 7, 2, c], [12, 8, 3, 1, '#d33'], [13, 7, 1, 3, '#d33'], [11, 10, 1, 1, d]];
+    case 'tesla':
+      return [[10, 8, 6, 2, d], [16, 7, 2, 4, c], [12, 7, 2, 1, c], [18, 8, 1, 2, '#ffffff']];
+    case 'mortar':
+      return [[8, 6, 11, 3, c], [18, 6, 1, 3, d], [10, 9, 2, 2, d], [15, 9, 2, 2, d]];
   }
 }
 

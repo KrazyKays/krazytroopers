@@ -79,6 +79,9 @@ describe('recrutement', () => {
 
   it("vend des armes à l'armurerie, avec sa propre garantie", () => {
     const st = createInitialState();
+    st.gold = 100000;
+    expect(buyWeapons(st, 'one').ok).toBe(false); // armurerie fermée avant le niveau 1 de la campagne
+    st.campaignLevel = 1;
     const owned = st.weapons.length;
     st.gold = WEAPON_PULL_COST + WEAPON_PULL10_COST - 1;
     const one = buyWeapons(st, 'one');
@@ -280,7 +283,7 @@ describe('entraînement et campagne', () => {
   });
 
   it('refuse un niveau verrouillé, puis donne une arme à la première victoire', () => {
-    const st = stateWithSoldiers(5, 3);
+    const st = stateWithSoldiers(4, 3);
     const squad = st.soldiers.map((s) => s.id);
     const weapons = st.weapons.length;
     expect(launchBattle(st, { mode: 'campaign', squad, level: 2 }).ok).toBe(false);
@@ -376,6 +379,7 @@ describe('estimation avant un vrai combat', () => {
 
   it('donne moins de chances face à un niveau de campagne bien plus élevé', () => {
     const st = stateWithSoldiers(3, 5);
+    st.campaignLevel = 39;
     const ids = st.soldiers.map((s) => s.id);
     const easy = estimateBattle(st, { mode: 'campaign', squad: ids, level: 1 }, 10, 1);
     const hard = estimateBattle(st, { mode: 'campaign', squad: ids, level: 40 }, 10, 1);

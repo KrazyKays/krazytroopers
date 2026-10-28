@@ -53,6 +53,24 @@ export interface GameState {
   battleSpeed: BattleSpeed;
   /** Le joueur a masqué le bandeau « prochaine étape ». */
   hideGuide: boolean;
+  /** Date (AAAA-MM-JJ) du dernier défi du jour tenté. */
+  lastDaily: string | null;
+  /** Jours consécutifs de défi du jour remporté. */
+  dailyStreak: number;
+  /** Expédition de survie en cours, s'il y en a une. */
+  survival: SurvivalRun | null;
+  /** Meilleure vague atteinte en survie. */
+  bestWave: number;
+}
+
+export interface SurvivalRun {
+  squad: string[];
+  /** Dernière vague remportée. */
+  wave: number;
+  /** Or accumulé, versé en encaissant. */
+  pot: number;
+  /** PV restants de chaque soldat encore engagé. */
+  hp: Record<string, number>;
 }
 
 export type WeaponShape =
@@ -71,7 +89,13 @@ export type WeaponShape =
   | 'flame'
   | 'minigun'
   | 'railgun'
-  | 'shield';
+  | 'shield'
+  | 'crossbow'
+  | 'revolver'
+  | 'spear'
+  | 'medic'
+  | 'tesla'
+  | 'mortar';
 
 export interface WeaponDef {
   id: string;
@@ -83,6 +107,13 @@ export interface WeaponDef {
   aoe: number;
   /** Armure apportée par l'arme en plus des stats du soldat (boucliers). */
   armor?: number;
+  /** Bonus propres à l'arme, ajoutés à ceux du soldat. */
+  lifesteal?: number;
+  dodge?: number;
+  crit?: number;
+  speedPct?: number;
+  /** Arme de soin : soigne l'allié le plus blessé au lieu de tirer, tant qu'il y en a un. */
+  heal?: boolean;
   shape: WeaponShape;
   color: string;
   droppable: boolean;
@@ -127,6 +158,7 @@ export interface CombatStats {
   ranged: boolean;
   berserk: boolean;
   secondWind: boolean;
+  heal: boolean;
 }
 
 export interface SpriteLook {

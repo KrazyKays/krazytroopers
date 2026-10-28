@@ -1,4 +1,6 @@
 import './style.css';
+import { dailyDone } from './game/combat';
+import { isUnlocked } from './game/progress';
 import { getState, loadState, subscribe } from './game/state';
 import { h } from './ui/dom';
 import { fmt, refreshModals } from './ui/components';
@@ -39,13 +41,17 @@ function render(): void {
   );
   tabsEl.replaceChildren(
     ...TABS.map((t) => {
-      const badge = t.id === 'roster' ? st.soldiers.reduce((n, s) => n + (s.picksLeft > 0 ? 1 : 0), 0) : t.id === 'recruit' ? st.freePulls : 0;
-      const badgeTitle = t.id === 'roster' ? 'Soldats avec des améliorations à choisir' : 'Tirages gratuits disponibles';
+      const badge =
+        t.id === 'roster' ? st.soldiers.reduce((n, s) => n + (s.picksLeft > 0 ? 1 : 0), 0)
+        : t.id === 'recruit' ? st.freePulls
+        : t.id === 'combat' && isUnlocked(st, 'daily') && !dailyDone(st) ? '!'
+        : 0;
+      const badgeTitle = t.id === 'roster' ? 'Soldats avec des améliorations à choisir' : t.id === 'combat' ? 'Défi du jour disponible' : 'Tirages gratuits disponibles';
       return h(
         'button',
         { class: `tab${t.id === tab ? ' active' : ''}`, title: t.hint, onclick: () => goTo(t.id) },
         t.label,
-        badge > 0 && h('span', { class: 'badge', title: badgeTitle }, badge),
+        badge !== 0 && h('span', { class: 'badge', title: badgeTitle }, badge),
       );
     }),
   );

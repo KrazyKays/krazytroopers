@@ -2436,3 +2436,162 @@ h3 {
     transition-duration: 0.2s;
   }
 }
+
+/* ---------- Modes débloquables, défi du jour, survie, forge ---------- */
+
+.subtabs {
+  flex-wrap: wrap;
+}
+
+.subtab {
+  min-width: 8.5rem;
+}
+
+.subtab.locked:not(.active) {
+  opacity: 0.6;
+}
+
+.subtab-wrap {
+  position: relative;
+  display: flex;
+  flex: 1;
+}
+
+.subtab-wrap > .badge {
+  position: absolute;
+  top: -0.4rem;
+  right: -0.3rem;
+  margin: 0;
+}
+
+.locked-panel {
+  border-style: dashed;
+}
+
+.locked-note {
+  margin: 0.4rem 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.daily-panel {
+  border-color: var(--accent);
+}
+
+.survival-panel .gold {
+  color: var(--accent);
+}
+
+.survival-hp {
+  margin: 0.6rem 0;
+  padding: 0;
+  list-style: none;
+}
+
+.survival-hp li {
+  display: grid;
+  grid-template-columns: minmax(0, 12rem) 1fr auto;
+  gap: 0.6rem;
+  align-items: center;
+  padding: 0.2rem 0;
+}
+
+.survival-hp li > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hpbar-inline {
+  height: 0.5rem;
+  background: rgba(0, 0, 0, 0.5);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.training-row {
+  margin-top: 0.3rem;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.weapon-traits {
+  color: #9fd0ff;
+}
+
+.forge-bar .btn-rarity {
+  border-color: var(--rc);
+}
+
+.result-list li.wounded {
+  color: #ffd98a;
+}
+
+.unlock-box {
+  margin: 0.8rem 0;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  background: rgba(201, 180, 88, 0.1);
+  text-align: left;
+}
+
+.unlock-box ul {
+  margin: 0.3rem 0 0;
+  padding-left: 1.2rem;
+}
+
+.unlock-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.unlock-list li {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 11rem) 1fr;
+  gap: 0.6rem;
+  align-items: baseline;
+  padding: 0.35rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.unlock-list li.locked {
+  opacity: 0.6;
+}
+
+.unlock-list .unlock-level {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.unlock-list li.unlocked .unlock-level {
+  color: var(--good);
+}
+
+@media (max-width: 600px) {
+  .unlock-list li {
+    grid-template-columns: 4rem 1fr;
+  }
+
+  .unlock-list li > .muted {
+    grid-column: 2;
+  }
+
+  .survival-hp li {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .survival-hp li > small {
+    grid-column: 1 / -1;
+  }
+}
+
+.projectile.heal {
+  background: #7dffb0;
+  box-shadow: 0 0 6px #3dff8a;
+}
+
+.floater.heal {
+  color: #7dffb0;
+}
