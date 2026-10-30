@@ -1,6 +1,6 @@
-export type Tab = 'roster' | 'recruit' | 'combat' | 'arsenal' | 'settings';
+export type Tab = 'home' | 'roster' | 'recruit' | 'combat' | 'arsenal' | 'settings';
 
-let current: Tab = 'roster';
+let current: Tab = 'home';
 let onChange: () => void = () => {};
 
 export function getTab(): Tab {

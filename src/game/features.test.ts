@@ -56,7 +56,7 @@ describe('rapatriement des blessés', () => {
   });
 
   it('ne compte comme pertes attendues que les défaites', () => {
-    const st = squadState(4, 30, 'railgun');
+    const st = squadState(3, 30, 'railgun');
     const est = estimateBattle(st, { mode: 'campaign', squad: ids(st), level: 1 }, 10, 1);
     expect(est.ok && est.avgDeaths).toBe(0);
   });
@@ -75,10 +75,12 @@ describe('seuils de progression', () => {
     const st = squadState(6, 10);
     expect(squadMax(st)).toBe(SQUAD_BASE);
     expect(launchBattle(st, { mode: 'campaign', squad: ids(st).slice(0, SQUAD_BASE + 1), level: 1 }).ok).toBe(false);
-    st.campaignLevel = unlockLevel('squad5');
+    st.campaignLevel = unlockLevel('squad4');
     expect(squadMax(st)).toBe(SQUAD_BASE + 1);
-    st.campaignLevel = unlockLevel('squad6');
+    st.campaignLevel = unlockLevel('squad5');
     expect(squadMax(st)).toBe(SQUAD_BASE + 2);
+    st.campaignLevel = unlockLevel('squad6');
+    expect(squadMax(st)).toBe(SQUAD_BASE + 3);
   });
 
   it('annonce les déblocages et offre un tirage gratuit au premier boss vaincu', () => {
@@ -88,7 +90,7 @@ describe('seuils de progression', () => {
     const r = launchBattle(st, { mode: 'campaign', squad: ids(st), level: 5 }, 3);
     if (!r.ok) throw new Error(r.error);
     expect(r.report.won).toBe(true);
-    expect(r.report.unlocked.map((u) => u.id)).toEqual(['squad5']);
+    expect(r.report.unlocked.map((u) => u.id)).toEqual(['simulation']);
     expect(r.report.freePulls).toBe(BOSS_FREE_PULLS);
     expect(st.freePulls).toBe(free + BOSS_FREE_PULLS);
     expect(unlocksBetween(0, 100)).toHaveLength(UNLOCKS.length);

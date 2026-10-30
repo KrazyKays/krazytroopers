@@ -5,7 +5,7 @@ import { getState, mutate, refresh } from '../game/state';
 import { weaponForSoldier } from '../game/stats';
 import type { GameState, Rarity, WeaponItem } from '../game/types';
 import { h } from './dom';
-import { confirmDialog, fmt, getSquadSort, openModal, rarityTag, soldierSprite, toast, undoable, weaponDelta, weaponIcon, weaponTraits } from './components';
+import { confirmDialog, familyTag, fmt, getSquadSort, openModal, rarityTag, soldierSprite, toast, undoable, weaponDelta, weaponIcon, weaponTraits } from './components';
 import { playGacha } from './gacha';
 import { weaponFront } from './recruit';
 import { goTo } from './nav';
@@ -167,7 +167,7 @@ export function renderArsenal(): HTMLElement {
   return h(
     'section',
     null,
-    h('h2', null, `Arsenal (${st.weapons.length})`),
+    h('h2', { class: 'section-title' }, `Arsenal (${st.weapons.length})`),
     h(
       'p',
       { class: 'muted' },
@@ -239,6 +239,7 @@ export function renderArsenal(): HTMLElement {
                   },
                 }),
                 h('b', { class: 'weapon-name', style: `color:${info.color}` }, def.name),
+                familyTag(def),
               ),
               h('div', { class: 'weapon-art' }, weaponIcon(def)),
               h(

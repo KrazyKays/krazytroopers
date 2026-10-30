@@ -1,11 +1,11 @@
 import { ARENA_H, ARENA_W, DT, type BattleEvent, type BattleResult, type BattleUnit, type Frame } from '../game/battle';
-import { RARITIES } from '../game/data';
+import { LOOT_METER_MAX, RARITIES } from '../game/data';
 import type { BattleReport } from '../game/combat';
 import { getState } from '../game/state';
 import { BATTLE_SPEEDS, type BattleSpeed } from '../game/types';
 import { h, html } from './dom';
 import { spriteSvg } from './avatar';
-import { fmt, weaponIcon } from './components';
+import { fmt, stars, weaponIcon } from './components';
 
 interface UnitView {
   el: HTMLElement;
@@ -41,10 +41,10 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
     const spriteWrap = h('div', { class: 'unit-sprite', style: `transform:scaleX(${facing})` }, sprite);
     const el = h(
       'div',
-      { class: `unit team-${u.team}`, style: `--s:${u.scale}` },
+      { class: `unit team-${u.team}${u.elite ? ' elite' : ''}`, style: `--s:${u.scale}` },
       h('div', { class: 'hpbar' }, fill),
       spriteWrap,
-      u.scale > 1 && h('div', { class: 'unit-name' }, u.name),
+      u.elite ? h('div', { class: 'unit-name' }, `★ ${u.elite}`) : u.scale > 1 && h('div', { class: 'unit-name' }, u.name),
     );
     arena.appendChild(el);
     return { el, fill, sprite: spriteWrap, facing };
@@ -139,7 +139,13 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
         else enemies++;
       }
     });
-    hud.textContent = `Alliés : ${allies} / ${units.filter((u) => u.team === 'ally').length}   ·   Ennemis : ${enemies} / ${units.filter((u) => u.team === 'enemy').length}`;
+    const totalAllies = units.filter((u) => u.team === 'ally').length;
+    const totalEnemies = units.length - totalAllies;
+    hud.replaceChildren(
+      h('span', { class: 'hud-side hud-ally' }, `🪖 ${allies} / ${totalAllies}`),
+      h('span', { class: 'hud-time' }, `${((Math.max(0, idx - 1)) * DT).toFixed(1)} s`),
+      h('span', { class: 'hud-side hud-enemy' }, `${enemies} / ${totalEnemies} 💀`),
+    );
   }
 
   function step(): void {
@@ -321,6 +327,7 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
     'div',
     { class: `result ${report.won ? 'won' : 'lost'}` },
     h('h2', null, title),
+    report.stars && h('div', { class: 'result-stars' }, stars(report.stars.got, 3, 'stars-huge'), report.stars.gained > 0 ? h('small', null, `+${report.stars.gained} nouvelle${report.stars.gained > 1 ? 's' : ''} étoile${report.stars.gained > 1 ? 's' : ''}`) : report.stars.best > report.stars.got && h('small', { class: 'muted' }, `Record : ${report.stars.best} ★`)),
     report.firstClear && h('p', { class: 'levelup' }, `Niveau ${report.level} de la campagne terminé !`),
     report.daily &&
       h('p', { class: report.won ? 'levelup' : 'muted' }, report.won ? `Défi « ${report.daily.modifier.name} » relevé ! Série : ${report.daily.streak} jour${report.daily.streak > 1 ? 's' : ''}.` : `Défi « ${report.daily.modifier.name} » perdu : la série repart à zéro.`),
@@ -339,9 +346,11 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
       'div',
       { class: 'result-rewards' },
       report.trainingFee && h('span', { class: 'reward cost', title: 'Entraînements payants, réglés au lancement' }, `−${fmt(report.trainingFee)} or d'entraînement`),
-      report.gold > 0 && h('span', { class: 'reward' }, `+${fmt(report.gold)} or`),
+      report.gold > 0 && h('span', { class: 'reward' }, `🪙 +${fmt(report.gold)} or`, report.stars && report.stars.gold > 0 ? h('small', null, ` (dont ${fmt(report.stars.gold)} d'étoiles)`) : null),
       report.weapon && h('span', { class: 'reward', style: `color:${RARITIES[report.weapon.rarity].color}` }, weaponIcon(report.weapon), ` ${report.weapon.name} obtenu !`),
-      report.freePulls > 0 && h('span', { class: 'reward' }, `+${report.freePulls} tirage${report.freePulls > 1 ? 's' : ''} gratuit${report.freePulls > 1 ? 's' : ''}`),
+      report.freePulls > 0 && h('span', { class: 'reward' }, `🎟️ +${report.freePulls} tirage${report.freePulls > 1 ? 's' : ''} gratuit${report.freePulls > 1 ? 's' : ''}`),
+      report.stars && report.stars.chests > 0 && h('span', { class: 'reward reward-chest' }, `🎁 Coffre d'étoiles ouvert !`),
+      report.loot && !report.weapon && h('span', { class: 'reward' }, `🔫 Butin ${report.loot.meter} / ${LOOT_METER_MAX}`),
     ),
     report.unlocked.length > 0 &&
       h(
@@ -350,7 +359,7 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
         h('b', null, report.unlocked.length > 1 ? 'Nouveautés débloquées !' : 'Nouveauté débloquée !'),
         h('ul', null, report.unlocked.map((u) => h('li', null, h('b', null, u.label), ` : ${u.desc}`))),
       ),
-    picks > 0 && h('p', { class: 'pill pill-pick result-hint' }, `${picks} soldat${picks > 1 ? 's ont' : ' a'} de nouvelles améliorations à choisir (onglet Escouade).`),
+    picks > 0 && h('p', { class: 'note note-accent result-hint' }, `⬆ ${picks} soldat${picks > 1 ? 's ont' : ' a'} de nouvelles améliorations à choisir (onglet Escouade).`),
     resultActions(close, replay),
   );
 }

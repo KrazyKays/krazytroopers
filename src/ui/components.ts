@@ -3,11 +3,33 @@ import { getState, getVersion, mutate, refresh, replaceState } from '../game/sta
 import { soldierLook } from '../game/look';
 import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
 import { SQUAD_SORTS, sortSquad, type SquadSort } from '../game/roster';
+import { FAMILY_LABELS, weaponFamily } from '../game/squad';
 import type { GameState, Rarity, Soldier, TitleId, WeaponDef } from '../game/types';
 import { spriteSvg, weaponSvg } from './avatar';
 import { h, html, type Child } from './dom';
 
 export const fmt = (n: number, digits = 0): string => n.toLocaleString('fr-FR', { maximumFractionDigits: digits, minimumFractionDigits: digits });
+
+/** Barre de progression horizontale (ratio entre 0 et 1), avec un libellé facultatif. */
+export function progressBar(ratio: number, label?: string, cls = ''): HTMLElement {
+  return h(
+    'div',
+    { class: `progress ${cls}` },
+    h('div', { class: 'progress-track' }, h('div', { class: 'progress-fill', style: `width:${Math.max(0, Math.min(1, ratio)) * 100}%` })),
+    label && h('small', { class: 'progress-label' }, label),
+  );
+}
+
+/** `n` étoiles pleines sur `max`. */
+export function stars(n: number, max = 3, cls = ''): HTMLElement {
+  return h('span', { class: `stars ${cls}`, title: `${n} étoile${n > 1 ? 's' : ''} sur ${max}` }, Array.from({ length: max }, (_, i) => h('span', { class: i < n ? 'star on' : 'star' }, '★')));
+}
+
+/** Famille d'une arme (pour les synergies), en petite étiquette. */
+export function familyTag(w: WeaponDef): HTMLElement | false {
+  const f = weaponFamily(w);
+  return !!f && h('span', { class: `tag tag-family fam-${f}`, title: 'Famille d’arme : compte pour les synergies d’escouade' }, FAMILY_LABELS[f]);
+}
 
 export function rarityTag(rarity: keyof typeof RARITIES): HTMLElement {
   return h('span', { class: 'rarity-tag', style: `color:${RARITIES[rarity].color}` }, RARITIES[rarity].label);
@@ -50,9 +72,9 @@ export function xpBar(s: Soldier): HTMLElement {
 // L'arme équipée reste visible même quand des améliorations sont à choisir
 export function statusPills(s: Soldier, weapon: WeaponDef): HTMLElement[] {
   const weaponPill = s.weaponUid
-    ? h('span', { class: 'pill', style: `color:${RARITIES[weapon.rarity].color};border-color:${RARITIES[weapon.rarity].color}` }, weapon.name)
+    ? h('span', { class: 'pill pill-weapon', style: `--rc:${RARITIES[weapon.rarity].color}` }, weaponIcon(weapon), weapon.name)
     : h('span', { class: 'pill pill-warn', title: 'Ce soldat se bat à mains nues : équipez-lui une arme' }, 'Sans arme');
-  if (s.picksLeft > 0) return [h('span', { class: 'pill pill-pick' }, `${s.picksLeft} amélioration${s.picksLeft > 1 ? 's' : ''} à choisir`), weaponPill];
+  if (s.picksLeft > 0) return [weaponPill, h('span', { class: 'pill pill-pick' }, `⬆ ${s.picksLeft} à choisir`)];
   return [weaponPill];
 }
 
@@ -77,7 +99,7 @@ function cardClass(base: string, s: Soldier, opts: CardOpts): string {
 export function soldierCard(st: GameState, s: Soldier, opts: CardOpts = {}): HTMLElement {
   const weapon = weaponForSoldier(s, st.weapons);
   const stats = computeStats(s, weapon);
-  const trainings = s.trainingsLeft > 0 ? ` · ${s.trainingsLeft} entraînement${s.trainingsLeft > 1 ? 's' : ''} gratuit${s.trainingsLeft > 1 ? 's' : ''}` : '';
+  const trainings = s.trainingsLeft > 0;
   const badges = s.titles.map((t) => h('span', { class: `title-badge title-badge-${t}`, title: TITLES[t].label }, TITLE_BADGE_ICON[t]));
   const nameClass = ['card-name', ...s.titles.map((t) => `name-${t}`)].join(' ');
   return h(
@@ -94,11 +116,16 @@ export function soldierCard(st: GameState, s: Soldier, opts: CardOpts = {}): HTM
       'div',
       { class: 'card-body' },
       h('div', { class: nameClass }, s.favorite && h('span', { class: 'fav-star', title: 'Favori' }, '★ '), s.name),
-      h('div', { class: 'card-sub' }, rarityTag(s.rarity), ` · Niv. ${s.level}`),
+      h('div', { class: 'card-sub' }, rarityTag(s.rarity), h('span', { class: 'card-level' }, `Niv. ${s.level}`)),
       xpBar(s),
-      h('div', { class: 'card-stats' }, `PV ${fmt(stats.maxHp)} · DPS ${fmt(dps(stats), 1)}${trainings}`),
-      statusPills(s, weapon),
-      costPill(opts),
+      h(
+        'div',
+        { class: 'card-stats' },
+        h('span', { title: 'Points de vie' }, '❤ ', fmt(stats.maxHp)),
+        h('span', { title: 'Dégâts par seconde' }, '✦ ', fmt(dps(stats), 1)),
+        trainings && h('span', { title: 'Entraînements gratuits restants' }, '🎯 ', String(s.trainingsLeft)),
+      ),
+      h('div', { class: 'card-pills' }, statusPills(s, weapon), costPill(opts)),
     ),
   );
 }

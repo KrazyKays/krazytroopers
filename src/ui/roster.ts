@@ -1,14 +1,30 @@
-import { AUTO_PICK_KILLS, LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PICK_EVERY_LEVELS, RARITIES, RARITY_ORDER, TRAINING_PER_SOLDIER, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
-import { squadMax } from '../game/progress';
-import { autoPickAll, autoPickUnlocked, equipWeapon, legionOfHonor, NAME_MAX_LENGTH, pickUpgrade, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite, trainingCost } from '../game/roster';
+import { LEGEND_UPGRADES, LEGION_PICKS, MAX_LEVEL, PICK_LEVELS, RARITIES, RARITY_ORDER, TRAINING_PER_SOLDIER, UPGRADE_KINDS, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
+import { squadMax, unlockLevel } from '../game/progress';
+import { barracksCap, equipWeapon, NAME_MAX_LENGTH, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite, trainingCost } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
-import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
-import type { GameState, Rarity, Soldier } from '../game/types';
+import { computeStats, dps, powerScore, weaponForSoldier, xpForNext } from '../game/stats';
+import {
+  autoPickAll,
+  autoPickUnlocked,
+  entitledPicks,
+  legionOfHonor,
+  maxRank,
+  nextPickLevel,
+  pickUpgrade,
+  recommendedUpgrade,
+  rerollCost,
+  rerollUpgrades,
+  statsWith,
+  upgradeCap,
+  upgradeGains,
+  upgradeRank,
+  upgradeSummary,
+} from '../game/upgrades';
+import type { CombatStats, GameState, Rarity, Soldier, WeaponDef } from '../game/types';
 import { h } from './dom';
 import { goTo } from './nav';
-import { confirmDialog, fmt, getSquadSort, openModal, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
+import { confirmDialog, familyTag, fmt, getSquadSort, openModal, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
 
-const legendIds = new Set(LEGEND_UPGRADES.map((u) => u.id));
 
 const RARITY_PLURAL: Record<Rarity, string> = { common: 'communs', rare: 'rares', epic: 'épiques', legendary: 'légendaires' };
 
@@ -24,12 +40,12 @@ function releasableByRarity(st: GameState, rarity: Rarity): Soldier[] {
 async function autoPickEverything(pending: number): Promise<void> {
   const ok = await confirmDialog({
     title: 'Choix automatique',
-    body: `Choisir au hasard les ${pending} amélioration${pending > 1 ? 's' : ''} en attente de toute l'escouade ? Les choix ne pourront pas être modifiés.`,
-    confirm: 'Choisir au hasard',
+    body: `Prendre l'amélioration conseillée pour les ${pending} choix en attente de toute l'escouade ? Les choix ne pourront pas être modifiés.`,
+    confirm: 'Appliquer les conseils',
   });
   if (!ok) return;
   const picks = mutate((st) => autoPickAll(st));
-  toast(`${picks} amélioration${picks > 1 ? 's' : ''} choisie${picks > 1 ? 's' : ''} au hasard.`, 'good');
+  toast(`${picks} amélioration${picks > 1 ? 's' : ''} choisie${picks > 1 ? 's' : ''}.`, 'good');
 }
 
 async function releaseSoldierList(list: Soldier[]): Promise<void> {
@@ -77,10 +93,10 @@ export function renderRoster(): HTMLElement {
     h(
       'div',
       { class: 'section-head' },
-      h('h2', null, `Escouade (${st.soldiers.length})`),
-      firstPending && !selectMode && h('button', { class: 'btn btn-small btn-gold', onclick: () => openSoldier(firstPending.id) }, `Choisir les améliorations (${pending})`),
+      h('h2', { class: 'section-title' }, `Escouade · caserne ${st.soldiers.length} / ${barracksCap(st)}`),
+      firstPending && !selectMode && h('button', { class: 'btn btn-primary', onclick: () => openSoldier(firstPending.id) }, `⬆ Choisir les améliorations (${pending})`),
     ),
-    h('p', { class: 'muted' }, `Cliquez sur un soldat pour choisir ses améliorations et son arme. Engagez jusqu'à ${squadMax(st)} soldats par combat.`),
+    h('p', { class: 'muted' }, `Touchez un soldat pour choisir ses améliorations et son arme. Engagez jusqu'à ${squadMax(st)} soldats par combat.`),
     squadToolbar(st),
     h(
       'div',
@@ -99,8 +115,8 @@ export function renderRoster(): HTMLElement {
       ),
       !selectMode &&
         (autoPickUnlocked(st)
-          ? h('button', { class: 'btn btn-small', disabled: pending === 0, onclick: () => autoPickEverything(pending) }, `Choisir au hasard les améliorations en attente (${pending})`)
-          : pending > 0 && h('span', { class: 'muted small' }, `Choix automatique débloqué à ${AUTO_PICK_KILLS} ennemis éliminés (${fmt(st.stats.kills)} / ${AUTO_PICK_KILLS})`)),
+          ? h('button', { class: 'btn btn-small', disabled: pending === 0, onclick: () => autoPickEverything(pending) }, `✨ Appliquer les conseils (${pending})`)
+          : pending > 0 && h('span', { class: 'muted small' }, `🔒 Choix automatique au niveau ${unlockLevel('autopick')} de la campagne`)),
     ),
     selectMode &&
       h(
@@ -179,8 +195,8 @@ function legionBlock(s: Soldier, removed: Set<string>): HTMLElement {
       'ul',
       { class: 'muted small legion-effects' },
       h('li', null, `${s.name} repart au niveau 1, avec son XP remis à zéro : ses statistiques baissent fortement jusqu'à ce qu'il remonte.`),
-      h('li', null, 'Les améliorations cochées sont perdues. Celles que vous gardez restent, et chacune réduit le nombre de choix à faire en remontant.'),
-      h('li', null, `Il propose 3 améliorations de Légende, bien plus puissantes, et gagne ${TRAINING_PER_SOLDIER} entraînements gratuits supplémentaires.`),
+      h('li', null, `Les améliorations cochées sont perdues (un rang par case). Il gagne ${LEGION_PICKS} emplacements d'amélioration de plus, qui se regagnent en remontant les paliers.`),
+      h('li', null, `Ses propositions incluent des améliorations de Légende, bien plus puissantes, et il gagne ${TRAINING_PER_SOLDIER} entraînements gratuits supplémentaires.`),
       h('li', null, "Il garde le titre Légende et reçoit le titre Légion d'honneur. Cette décision est définitive."),
     ),
     h(
@@ -225,13 +241,6 @@ function legionBlock(s: Soldier, removed: Set<string>): HTMLElement {
       "Accorder la Légion d'honneur",
     ),
   );
-}
-
-// Niveau auquel le soldat débloquera sa prochaine amélioration (null s'il n'en gagnera plus)
-function nextPickLevel(s: Soldier): number | null {
-  if (s.upgrades.length + s.picksLeft >= MAX_UPGRADES) return null;
-  const level = (Math.floor(s.level / PICK_EVERY_LEVELS) + 1) * PICK_EVERY_LEVELS;
-  return level < MAX_LEVEL ? level : null;
 }
 
 export function openSoldier(id: string): void {
@@ -287,48 +296,10 @@ export function openSoldier(id: string): void {
       statRow('Armure', fmt(stats.armor)),
       statRow('Critique', `${fmt(stats.crit * 100)} %`),
       statRow('Esquive', `${fmt(stats.dodge * 100)} %`),
+      statRow('Puissance', fmt(powerScore(stats))),
     );
 
-    let upgrades: HTMLElement;
-    if (s.picksLeft > 0 && s.upgradeChoices) {
-      const n = s.upgrades.length + 1;
-      upgrades = h(
-        'div',
-        { class: 'upgrade-block' },
-        h('h3', null, `Amélioration ${n} — choisissez-en une`),
-        h(
-          'div',
-          { class: 'choices' },
-          s.upgradeChoices.map((uid) => {
-            const u = UPGRADES_BY_ID[uid];
-            return h(
-              'button',
-              {
-                class: `choice${legendIds.has(uid) ? ' choice-legend' : ''}`,
-                onclick: () => {
-                  mutate((state) => pickUpgrade(state, s.id, uid));
-                },
-              },
-              h('b', null, u.name),
-              h('span', null, u.desc),
-            );
-          }),
-        ),
-      );
-    } else {
-      const next = nextPickLevel(s);
-      upgrades = h(
-        'div',
-        { class: 'upgrade-block' },
-        h('h3', null, `Améliorations (${s.upgrades.length} / ${MAX_UPGRADES})`),
-        next !== null && h('p', { class: 'muted small' }, `Prochaine amélioration au niveau ${next}.`),
-      );
-    }
-    if (s.upgrades.length > 0) {
-      upgrades.appendChild(
-        h('ul', { class: 'upgrade-list' }, s.upgrades.map((uid) => h('li', null, h('b', null, UPGRADES_BY_ID[uid].name), ` — ${UPGRADES_BY_ID[uid].desc}`))),
-      );
-    }
+    const upgrades = upgradeBlock(st, s, weapon, stats);
 
     const owners = new Map(st.soldiers.filter((x) => x.weaponUid).map((x) => [x.weaponUid as string, x]));
     const weaponList = h(
@@ -350,7 +321,7 @@ export function openSoldier(id: string): void {
             h(
               'span',
               null,
-              h('b', { style: `color:${RARITIES[def.rarity].color}` }, def.name),
+              h('b', { style: `color:${RARITIES[def.rarity].color}` }, def.name, ' ', familyTag(def)),
               s.weaponUid === w.uid ? h('small', null, 'Équipée') : weaponDelta(s, weapon, def),
               owner && owner.id !== s.id && h('small', { class: 'muted owner' }, `Équipée par ${owner.name} (échange)`),
             ),
@@ -386,7 +357,7 @@ export function openSoldier(id: string): void {
       statsBlock,
       upgrades,
       legion,
-      h('div', { class: 'upgrade-block' }, h('h3', null, `Arme : ${weapon.name}`), weaponList),
+      h('div', { class: 'upgrade-block' }, h('h3', null, `Arme : ${weapon.name} `, familyTag(weapon)), h('p', { class: 'muted small' }, "La famille de l'arme compte pour les synergies d'escouade (onglet Combat)."), weaponList),
       h(
         'div',
         { class: 'detail-actions' },
@@ -411,4 +382,134 @@ export function openSoldier(id: string): void {
       ),
     );
   });
+}
+
+// ---------- Améliorations ----------
+
+const pct = (v: number) => `${fmt(v * 100)} %`;
+
+/** Statistiques comparées dans l'aperçu d'une amélioration. */
+const PREVIEW: { label: string; get: (c: CombatStats) => number; show: (v: number) => string }[] = [
+  { label: 'PV', get: (c) => c.maxHp, show: (v) => fmt(v) },
+  { label: 'DPS', get: (c) => dps(c), show: (v) => fmt(v, 1) },
+  { label: 'Armure', get: (c) => c.armor, show: (v) => fmt(v) },
+  { label: 'Critique', get: (c) => c.crit, show: pct },
+  { label: 'Esquive', get: (c) => c.dodge, show: pct },
+  { label: 'Vitesse', get: (c) => c.speed, show: (v) => fmt(v) },
+  { label: 'Portée', get: (c) => c.range, show: (v) => fmt(v) },
+  { label: 'Vol de vie', get: (c) => c.lifesteal, show: pct },
+  { label: 'Régén./s', get: (c) => c.regen, show: pct },
+  { label: 'Zone', get: (c) => c.aoe, show: (v) => fmt(v) },
+];
+
+function previewChips(before: CombatStats, after: CombatStats): HTMLElement {
+  const changed = PREVIEW.filter((p) => Math.abs(p.get(after) - p.get(before)) > 1e-6);
+  return h(
+    'span',
+    { class: 'choice-preview' },
+    changed.length === 0
+      ? h('small', { class: 'muted' }, 'Effet hors statistiques')
+      : changed.map((p) => h('small', { class: p.get(after) > p.get(before) ? 'up' : 'down' }, `${p.label} ${p.show(p.get(before))} → ${p.show(p.get(after))}`)),
+  );
+}
+
+/** Emplacements d'amélioration : pris, à choisir, puis verrouillés jusqu'à leur palier de niveau. */
+function slotTrack(s: Soldier): HTMLElement {
+  const cap = upgradeCap(s);
+  const taken = s.upgrades.length;
+  const pending = s.picksLeft;
+  // niveau de déblocage de chaque emplacement restant (paliers de base, puis ceux regagnés après une Légion)
+  const levels: number[] = [];
+  for (const l of PICK_LEVELS) if (entitledPicks(l, s.legions) > taken + pending + levels.length && levels.length < cap - taken - pending) levels.push(l);
+  return h(
+    'div',
+    { class: 'upgrade-slots' },
+    Array.from({ length: taken }, () => h('span', { class: 'uslot taken', title: 'Amélioration prise' }, '✓')),
+    Array.from({ length: pending }, () => h('span', { class: 'uslot pending', title: 'Amélioration à choisir' }, '!')),
+    levels.map((l) => h('span', { class: 'uslot locked', title: `Se débloque au niveau ${l}` }, `${l}`)),
+  );
+}
+
+function upgradeBlock(st: GameState, s: Soldier, weapon: WeaponDef, stats: CombatStats): HTMLElement {
+  const next = nextPickLevel(s);
+  const block = h(
+    'div',
+    { class: 'upgrade-block' },
+    h(
+      'div',
+      { class: 'panel-head' },
+      h('h3', null, `Améliorations ${s.upgrades.length} / ${upgradeCap(s)}`),
+      next !== null && s.picksLeft === 0 && h('span', { class: 'muted small' }, `Prochaine au niveau ${next}`),
+    ),
+    slotTrack(s),
+  );
+
+  if (s.picksLeft > 0 && s.upgradeChoices) {
+    const gains = upgradeGains(st, s);
+    const best = recommendedUpgrade(st, s);
+    const legend = new Set(LEGEND_UPGRADES.map((u) => u.id));
+    const cost = rerollCost(s);
+    block.append(
+      h('p', { class: 'muted small' }, `Choisissez une amélioration${s.picksLeft > 1 ? ` (encore ${s.picksLeft} à choisir)` : ''}. L'aperçu tient compte de l'arme actuelle : ${weapon.name}.`),
+      h(
+        'div',
+        { class: 'choices' },
+        s.upgradeChoices.map((uid) => {
+          const u = UPGRADES_BY_ID[uid];
+          const rank = upgradeRank(s, uid) + 1;
+          const gain = gains.get(uid) ?? 0;
+          const kind = UPGRADE_KINDS[u.kind];
+          return h(
+            'button',
+            { class: `choice kind-${u.kind}${legend.has(uid) ? ' choice-legend' : ''}${uid === best ? ' choice-best' : ''}`, onclick: () => mutate((state) => pickUpgrade(state, s.id, uid)) },
+            h('span', { class: 'choice-top' }, h('span', { class: 'choice-kind', title: kind.label }, kind.icon, ' ', kind.label), uid === best && h('span', { class: 'tag tag-accent' }, 'Conseillé')),
+            h('b', null, u.name, maxRank(u) > 1 && h('span', { class: 'rank' }, ` rang ${rank}/${maxRank(u)}`)),
+            h('span', { class: 'choice-desc' }, u.desc),
+            previewChips(stats, statsWith(s, weapon, uid)),
+            gain > 0.0005 && h('small', { class: 'choice-gain' }, `Puissance +${fmt(gain * 100, 1)} %`),
+          );
+        }),
+      ),
+      h(
+        'div',
+        { class: 'row' },
+        h(
+          'button',
+          {
+            class: 'btn btn-small',
+            disabled: st.gold < cost,
+            title: st.gold < cost ? `Il manque ${fmt(cost - st.gold)} or` : 'Remplacer les trois propositions',
+            onclick: () => {
+              const r = mutate((state) => rerollUpgrades(state, s.id));
+              if (!r.ok) toast(r.error, 'bad');
+            },
+          },
+          `🎲 Autres propositions — ${fmt(cost)} or`,
+        ),
+      ),
+    );
+  }
+
+  const owned = upgradeSummary(s);
+  if (owned.length > 0) {
+    block.append(
+      h(
+        'ul',
+        { class: 'upgrade-owned' },
+        owned.map(({ def, rank }) =>
+          h(
+            'li',
+            { class: `kind-${def.kind}` },
+            h('span', { class: 'choice-kind', title: UPGRADE_KINDS[def.kind].label }, UPGRADE_KINDS[def.kind].icon),
+            h('b', null, def.name),
+            maxRank(def) > 1 && h('span', { class: 'rank' }, `rang ${rank}/${maxRank(def)}`),
+            h('span', { class: 'muted small' }, def.desc),
+          ),
+        ),
+      ),
+    );
+  } else if (s.picksLeft === 0) {
+    block.append(h('p', { class: 'muted small' }, 'Aucune amélioration pour le moment.'));
+  }
+  return block;
 }

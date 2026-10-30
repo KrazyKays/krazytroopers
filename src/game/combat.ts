@@ -1,5 +1,7 @@
 import { DT, simulate, type BattleResult, type BattleUnit } from './battle';
-import { BOSS_FREE_PULLS, MAX_LEVEL, SURVIVAL_REST_HEAL, type UnlockDef } from './data';
+import { BOSS_FREE_PULLS, LOOT_FIRST_CLEAR, LOOT_METER_MAX, LOOT_REPLAY, MAX_LEVEL, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, type UnlockDef } from './data';
+import { grantLevelPicks } from './upgrades';
+import { activeTactic, applySquadBonuses, synergyStatus } from './squad';
 import {
   buildCampaignEnemies,
   buildDailyEnemies,
@@ -16,7 +18,7 @@ import {
 } from './enemies';
 import { soldierLook } from './look';
 import { isUnlocked, squadMax, unlockLevel, unlocksBetween } from './progress';
-import { grantLevelPicks, rollWeaponDrop, trainingCost } from './roster';
+import { rollWeaponDrop, trainingCost } from './roster';
 import { aggregateMods, addXp, computeStats, weaponForSoldier } from './stats';
 import { nextUid } from './state';
 import { mulberry32, randomSeed, type Rng } from './rng';
@@ -72,6 +74,10 @@ export interface BattleReport {
   survival?: SurvivalReport;
   /** Or payé au lancement pour les soldats sans entraînement gratuit. */
   trainingFee?: number;
+  /** Campagne gagnée : étoiles obtenues, nouvelles étoiles (au-delà du record) et coffres ouverts. */
+  stars?: { got: number; best: number; gained: number; gold: number; chests: number };
+  /** Campagne gagnée : remplissage de la jauge de butin (une arme tombe quand elle est pleine). */
+  loot?: { gained: number; meter: number };
 }
 
 export type BattleLaunch =
@@ -117,11 +123,34 @@ export function survivalWaveGold(waveLevel: number): number {
   return 10 + 6 * waveLevel;
 }
 
+/** Stats de combat de chaque soldat, tactique et synergies de l'escouade comprises. */
+export function squadStats(st: GameState, squad: readonly Soldier[]): Map<string, ReturnType<typeof computeStats>> {
+  const weapons = squad.map((s) => weaponForSoldier(s, st.weapons));
+  const synergies = synergyStatus(weapons);
+  const tactic = activeTactic(st);
+  return new Map(squad.map((s, i) => [s.id, applySquadBonuses(computeStats(s, weapons[i]), weapons[i], tactic, synergies)]));
+}
+
 function allyUnits(st: GameState, squad: Soldier[], hp?: Record<string, number>): BattleUnit[] {
+  const stats = squadStats(st, squad);
   return squad.map((s) => {
     const weapon = weaponForSoldier(s, st.weapons);
-    return { id: s.id, team: 'ally', name: s.name, look: soldierLook(s, weapon), scale: 1, soldierId: s.id, stats: computeStats(s, weapon), hp: hp?.[s.id] };
+    return { id: s.id, team: 'ally', name: s.name, look: soldierLook(s, weapon), scale: 1, soldierId: s.id, stats: stats.get(s.id)!, hp: hp?.[s.id] };
   });
+}
+
+/** Étoiles d'une victoire de campagne : 3 sans perte, 2 si au plus la moitié de l'escouade est tombée, 1 sinon. */
+export function campaignStarsFor(fallen: number, squadSize: number): number {
+  return fallen === 0 ? 3 : fallen <= squadSize / 2 ? 2 : 1;
+}
+
+/** Or offert par chaque nouvelle étoile d'un niveau. */
+export function starGold(level: number): number {
+  return 5 + 2 * level;
+}
+
+export function totalStars(st: GameState): number {
+  return Object.values(st.campaignStars).reduce((a, b) => a + b, 0);
 }
 
 export type SimulationLaunch = { ok: true; units: BattleUnit[]; result: BattleResult } | { ok: false; error: string };
@@ -310,7 +339,26 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
         st.campaignLevel = req.level;
         if (isBossLevel(req.level)) report.freePulls = BOSS_FREE_PULLS;
       }
-      if (firstClear || Math.random() < 0.25) grantWeapon(rollWeaponDrop(req.level, isBossLevel(req.level)));
+      // Butin régulier : la première victoire d'un boss garantit une arme améliorée ; sinon la jauge se remplit
+      if (firstClear && isBossLevel(req.level)) grantWeapon(rollWeaponDrop(req.level, true));
+      else {
+        const gained = firstClear ? LOOT_FIRST_CLEAR : LOOT_REPLAY;
+        st.lootMeter += gained;
+        if (st.lootMeter >= LOOT_METER_MAX) {
+          st.lootMeter -= LOOT_METER_MAX;
+          grantWeapon(rollWeaponDrop(req.level, false));
+        }
+        report.loot = { gained, meter: st.lootMeter };
+      }
+      const got = campaignStarsFor(result.deadIds.length, squad.length);
+      const prev = st.campaignStars[req.level] ?? 0;
+      const gained = Math.max(0, got - prev);
+      st.campaignStars[req.level] = Math.max(prev, got);
+      const chests = Math.floor(totalStars(st) / STAR_CHEST_EVERY) - st.starChests;
+      st.starChests += chests;
+      report.stars = { got, best: st.campaignStars[req.level], gained, gold: gained * starGold(req.level), chests };
+      report.gold += report.stars.gold;
+      report.freePulls += chests;
     }
   } else if (req.mode === 'daily') {
     const streak = won ? (st.lastDaily === previousDay(dayKey) ? st.dailyStreak + 1 : 1) : 0;
@@ -323,7 +371,7 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
       grantWeapon(rollWeaponDrop(level!, true));
     }
   } else {
-    report.survival = survivalAfterWave(st, squad, result, won, level!, grantWeapon);
+    report.survival = survivalAfterWave(st, squad, allies, result, won, level!, grantWeapon);
     // le pot n'est versé qu'à la fin de l'expédition (encaissement, ou moitié en cas de défaite)
     if (report.survival.ended) report.gold = report.survival.pot;
   }
@@ -333,7 +381,7 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   return { ok: true, units, result, report };
 }
 
-function survivalAfterWave(st: GameState, squad: Soldier[], result: BattleResult, won: boolean, waveLevel: number, grantWeapon: (w: WeaponDef) => void): SurvivalReport {
+function survivalAfterWave(st: GameState, squad: Soldier[], allies: BattleUnit[], result: BattleResult, won: boolean, waveLevel: number, grantWeapon: (w: WeaponDef) => void): SurvivalReport {
   const run = st.survival ?? { squad: squad.map((s) => s.id), wave: 0, pot: 0, hp: {} };
   if (!won) {
     st.survival = null;
@@ -348,7 +396,7 @@ function survivalAfterWave(st: GameState, squad: Soldier[], result: BattleResult
   run.squad = standing.map((s) => s.id);
   run.hp = Object.fromEntries(
     standing.map((s) => {
-      const maxHp = computeStats(s, weaponForSoldier(s, st.weapons)).maxHp;
+      const maxHp = allies.find((u) => u.id === s.id)!.stats.maxHp;
       return [s.id, Math.min(maxHp, result.hpLeft[s.id] + maxHp * SURVIVAL_REST_HEAL)];
     }),
   );

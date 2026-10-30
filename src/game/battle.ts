@@ -17,6 +17,8 @@ export interface BattleUnit {
   stats: CombatStats;
   /** Cible factice (mode simulation) : invincible, et ses dégâts augmentent de `growth` par seconde de combat. */
   dummy?: { growth: number };
+  /** Affixe d'un ennemi d'élite (affiché en combat et dans l'aperçu). */
+  elite?: string;
   /** PV au début du combat (survie : les blessures des vagues précédentes) ; PV max par défaut. */
   hp?: number;
 }
@@ -118,6 +120,22 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
     }
     return best;
   };
+  // Ennemi à portée le plus entamé (en proportion de ses PV) ; à défaut, le plus proche
+  const weakestInRange = (i: number): number => {
+    const range2 = units[i].stats.range ** 2;
+    let best = -1;
+    let bestRatio = Infinity;
+    for (let j = 0; j < n; j++) {
+      if (units[j].team === units[i].team || !alive(j)) continue;
+      if ((x[j] - x[i]) ** 2 + (y[j] - y[i]) ** 2 > range2) continue;
+      const ratio = hp[j] / units[j].stats.maxHp;
+      if (ratio < bestRatio) {
+        bestRatio = ratio;
+        best = j;
+      }
+    }
+    return best >= 0 ? best : nearestEnemy(i);
+  };
   // Allié vivant le plus blessé (en proportion de ses PV), soigneur compris ; -1 si tout le monde est en forme
   const mostInjuredAlly = (i: number): number => {
     let best = -1;
@@ -192,7 +210,7 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
         }
         continue;
       }
-      const t = nearestEnemy(i);
+      const t = S.focusWeak ? weakestInRange(i) : nearestEnemy(i);
       if (t < 0) continue;
       const dx = x[t] - x[i];
       const dy = y[t] - y[i];

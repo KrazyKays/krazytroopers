@@ -8,8 +8,9 @@ export function levelMult(level: number): number {
   return 1 + 0.08 * (level - 1);
 }
 
+// Départ plus lent qu'avant (55 XP au lieu de 40 pour le niveau 2), sans alourdir la fin de progression
 export function xpForNext(level: number): number {
-  return 40 + 18 * (level - 1);
+  return 55 + 16 * (level - 1);
 }
 
 export function aggregateMods(upgradeIds: readonly string[]): Mods {
@@ -58,6 +59,19 @@ export function weaponForSoldier(s: Soldier, weapons: readonly { uid: string; de
 
 export function dps(stats: CombatStats): number {
   return stats.damage / stats.cooldown;
+}
+
+/**
+ * Note de puissance d'un soldat : moyenne géométrique de sa résistance (PV effectifs, soins compris)
+ * et de son efficacité offensive (dégâts moyens, zone, mobilité au corps à corps). Sert à comparer des options.
+ */
+export function powerScore(s: CombatStats): number {
+  const hit = s.damage * (1 + s.crit) * (s.berserk ? 1.15 : 1);
+  const rate = hit / s.cooldown;
+  const offense = rate * (1 + s.aoe / 80) * (s.ranged ? Math.pow(s.range / 150, 0.15) : Math.pow(s.speed / 70, 0.5));
+  const ehp = (s.maxHp * (1 + s.armor / 100)) / (1 - s.dodge);
+  const survival = (ehp + 20 * (s.regen * s.maxHp + s.lifesteal * rate)) * (s.secondWind ? 1.25 : 1);
+  return Math.sqrt(Math.max(1, survival) * Math.max(0.1, offense));
 }
 
 export function addXp(s: Soldier, amount: number): number {

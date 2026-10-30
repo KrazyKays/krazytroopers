@@ -38,13 +38,49 @@ export const isBossLevel = (level: number): boolean => level % BOSS_EVERY === 0;
 /**
  * Multiplicateur de puissance des ennemis de campagne. Légèrement quadratique : les soldats montent en
  * puissance (niveau, améliorations, armes) plus vite qu'une courbe linéaire, et la fin de campagne doit le suivre.
+ * Les premiers niveaux sont relevés (voir EARLY_BUMP) : quelques entraînements s'imposent entre eux, le temps de
+ * découvrir chaque mécanique avant que l'escouade ne grandisse.
  */
 export function levelPower(level: number): number {
-  return 0.5 + 0.035 * level + 0.0012 * level * level;
+  return (0.5 + 0.035 * level + 0.0012 * level * level) * (1 + EARLY_BUMP * Math.max(0, 1 - level / EARLY_LEVELS));
 }
+
+/** Surcoût de puissance des tout premiers niveaux, qui s'estompe jusqu'au niveau EARLY_LEVELS. */
+const EARLY_BUMP = 0.8;
+const EARLY_LEVELS = 12;
 
 export function campaignEnemyCount(level: number): number {
   return Math.min(2 + Math.floor(level * 0.55), 18);
+}
+
+// ---------- Élites ----------
+
+export interface EliteAffix {
+  id: string;
+  name: string;
+  desc: string;
+  apply: (s: CombatStats) => void;
+}
+
+export const ELITE_AFFIXES: EliteAffix[] = [
+  { id: 'armored', name: 'Blindé', desc: '+25 armure', apply: (s) => { s.armor += 25; } },
+  { id: 'frenzied', name: 'Enragé', desc: '+40 % dégâts sous 50 % PV, +15 % vitesse', apply: (s) => { s.berserk = true; s.speed *= 1.15; } },
+  { id: 'swift', name: 'Véloce', desc: '+50 % vitesse, +15 % esquive', apply: (s) => { s.speed *= 1.5; s.dodge += 0.15; } },
+  { id: 'vampiric', name: 'Vampire', desc: 'Soigne 25 % des dégâts infligés', apply: (s) => { s.lifesteal += 0.25; } },
+  { id: 'regen', name: 'Régénérant', desc: 'Régénère 2 % des PV par seconde', apply: (s) => { s.regen += 0.02; } },
+];
+
+/** Nombre d'élites d'un niveau de campagne : aucun avant le niveau 6, puis un de plus tous les 7 niveaux. */
+export function eliteCount(level: number): number {
+  return level < 6 ? 0 : Math.min(4, 1 + Math.floor((level - 6) / 7));
+}
+
+function makeElite(u: BattleUnit, affix: EliteAffix): void {
+  u.stats.maxHp *= 1.25;
+  affix.apply(u.stats);
+  u.elite = affix.name;
+  u.name = `${u.name} d'élite`;
+  u.scale = 1.15;
 }
 
 /** Retouches appliquées à toute une armée (défi du jour). */
@@ -85,17 +121,18 @@ function compose(level: number, count: number, rng: Rng): Template[] {
 }
 
 /** Armée « normale » d'un niveau : `bosses` d'entre eux remplacent autant de soldats. */
-function army(level: number, count: number, bosses: number, rng: Rng, mods: ArmyMods = {}, forced?: Template): BattleUnit[] {
+function army(level: number, count: number, bosses: number, rng: Rng, mods: ArmyMods = {}, forced?: Template, elites = 0): BattleUnit[] {
   const m = levelPower(level);
   const troops = Math.max(0, count - bosses);
   const templates = forced ? Array.from({ length: troops }, () => forced) : compose(level, troops, rng);
   const units = templates.map((t, i) => makeEnemy(t, WEAPONS_BY_ID[t.weapon], i, m * range(rng, 0.95, 1.05), 1, undefined, mods));
+  for (let e = 0; e < Math.min(elites, units.length); e++) makeElite(units[units.length - 1 - e], ELITE_AFFIXES[Math.floor(rng() * ELITE_AFFIXES.length)]);
   for (let b = 0; b < bosses; b++) units.push(makeBoss(level + b * BOSS_EVERY, units.length, m, mods));
   return units;
 }
 
 export function buildCampaignEnemies(level: number): BattleUnit[] {
-  return army(level, campaignEnemyCount(level), isBossLevel(level) ? 1 : 0, mulberry32(level * 7919 + 13));
+  return army(level, campaignEnemyCount(level), isBossLevel(level) ? 1 : 0, mulberry32(level * 7919 + 13), {}, undefined, eliteCount(level));
 }
 
 function makeBoss(level: number, index: number, m: number, mods: ArmyMods = {}): BattleUnit {
@@ -185,7 +222,7 @@ export function survivalWaveLevel(wave: number, campaignLevel: number): number {
 /** Une vague sur 5 est menée par un boss. */
 export function buildSurvivalEnemies(wave: number, campaignLevel: number, rng: Rng): BattleUnit[] {
   const level = survivalWaveLevel(wave, campaignLevel);
-  return army(level, campaignEnemyCount(level), isBossLevel(wave) ? 1 : 0, rng);
+  return army(level, campaignEnemyCount(level), isBossLevel(wave) ? 1 : 0, rng, {}, undefined, eliteCount(level));
 }
 
 // ---------- Simulation ----------
@@ -246,10 +283,22 @@ export function buildSimulationEnemies(cfg: SimulationConfig, rng: Rng): BattleU
   return army(level, count, cfg.boss ? 1 : 0, rng, {}, TEMPLATES.find((t) => t.id === cfg.opponent));
 }
 
-export function previewCampaign(level: number): { count: number; boss: boolean; names: string[] } {
+export interface ArmyPreview {
+  count: number;
+  boss: boolean;
+  /** Types de troupes, avec leur effectif. */
+  groups: { name: string; count: number }[];
+  /** Affixes des élites présents. */
+  elites: EliteAffix[];
+}
+
+export function previewCampaign(level: number): ArmyPreview {
   return previewUnits(buildCampaignEnemies(level), isBossLevel(level));
 }
 
-export function previewUnits(units: BattleUnit[], boss: boolean): { count: number; boss: boolean; names: string[] } {
-  return { count: units.length, boss, names: [...new Set(units.map((u) => u.name))] };
+export function previewUnits(units: BattleUnit[], boss: boolean): ArmyPreview {
+  const counts = new Map<string, number>();
+  for (const u of units) counts.set(u.name, (counts.get(u.name) ?? 0) + 1);
+  const elites = [...new Set(units.map((u) => u.elite).filter(Boolean))].map((name) => ELITE_AFFIXES.find((a) => a.name === name)!);
+  return { count: units.length, boss, groups: [...counts].map(([name, count]) => ({ name, count })), elites };
 }

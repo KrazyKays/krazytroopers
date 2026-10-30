@@ -13,7 +13,7 @@ export function isUnlocked(st: GameState, id: UnlockId): boolean {
 
 /** Nombre de soldats engageables par combat, selon les places débloquées en campagne. */
 export function squadMax(st: GameState): number {
-  return SQUAD_BASE + (isUnlocked(st, 'squad5') ? 1 : 0) + (isUnlocked(st, 'squad6') ? 1 : 0);
+  return SQUAD_BASE + (['squad4', 'squad5', 'squad6'] as const).filter((id) => isUnlocked(st, id)).length;
 }
 
 /** Déblocages obtenus en passant du niveau de campagne `before` à `after`. */

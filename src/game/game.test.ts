@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { simulate } from './battle';
 import { DEFAULT_SIMULATION, estimateBattle, estimateSimulation, launchBattle, launchSimulation } from './combat';
-import { AUTO_PICK_KILLS, LEGEND_UPGRADES, MAX_LEVEL, MAX_UPGRADES, PITY_LIMIT, PULL_COST, START_FREE_PULLS, START_GOLD, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADE_PICKS, UPGRADES, WEAPON_PULL10_COST, WEAPON_PULL_COST, WEAPONS_BY_ID } from './data';
+import { LEGEND_UPGRADES, LEGION_PICKS, MAX_LEVEL, MAX_UPGRADES, PICK_LEVELS, PITY_LIMIT, PULL_COST, START_FREE_PULLS, START_GOLD, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADES, UPGRADES_BY_ID, WEAPON_PULL10_COST, WEAPON_PULL_COST, WEAPONS_BY_ID } from './data';
 import { buildCampaignEnemies, SIM_MAX_ENEMIES } from './enemies';
 import { mulberry32 } from './rng';
-import { autoPickAll, autoPickUnlocked, buyWeapons, createSoldier, entitledPicks, equipWeapon, grantLevelPicks, legionOfHonor, pickUpgrade, recruit, releaseSoldier, releaseSoldiers, sellWeapon, sellWeapons, sortSquad, toggleFavorite } from './roster';
+import { barracksCap, buyWeapons, createSoldier, equipWeapon, recruit, releaseSoldier, releaseSoldiers, sellWeapon, sellWeapons, sortSquad, toggleFavorite } from './roster';
+import { unlockLevel } from './progress';
+import { autoPickAll, autoPickUnlocked, entitledPicks, grantLevelPicks, legionOfHonor, maxRank, pickUpgrade, recommendedUpgrade, rerollCost, rerollUpgrades, upgradeCap, upgradeRank } from './upgrades';
 import { createInitialState } from './state';
 import { addXp, computeStats } from './stats';
 import { soldierLook } from './look';
@@ -67,6 +69,7 @@ describe('recrutement', () => {
   it('garantit un épique ou mieux au bout de la série de pitié', () => {
     const st = createInitialState();
     st.gold = 100000;
+    st.campaignLevel = 25; // caserne assez grande pour toute la série
     const rng = () => 0; // tire toujours le plus commun
     const rarities: string[] = [];
     for (let i = 0; i < PITY_LIMIT; i++) {
@@ -80,8 +83,8 @@ describe('recrutement', () => {
   it("vend des armes à l'armurerie, avec sa propre garantie", () => {
     const st = createInitialState();
     st.gold = 100000;
-    expect(buyWeapons(st, 'one').ok).toBe(false); // armurerie fermée avant le niveau 1 de la campagne
-    st.campaignLevel = 1;
+    expect(buyWeapons(st, 'one').ok).toBe(false); // armurerie fermée en début de campagne
+    st.campaignLevel = unlockLevel('bulk');
     const owned = st.weapons.length;
     st.gold = WEAPON_PULL_COST + WEAPON_PULL10_COST - 1;
     const one = buyWeapons(st, 'one');
@@ -104,24 +107,86 @@ describe('recrutement', () => {
     expect(rarities.every((r, i) => WEAPONS_BY_ID[st.weapons[owned + 1 + i].defId].rarity === r)).toBe(true);
   });
 
-  it('propose 3 améliorations à choisir 3 fois, et les débloque tous les 5 niveaux', () => {
+  it('limite l’effectif à la capacité de la caserne, qui grandit avec la campagne', () => {
+    const st = createInitialState();
+    st.gold = 100000;
+    st.freePulls = 0;
+    const cap = barracksCap(st);
+    for (let i = 0; i < cap; i++) expect(recruit(st, 'one').ok).toBe(true);
+    expect(recruit(st, 'one').ok).toBe(false);
+    st.campaignLevel = 12;
+    expect(barracksCap(st)).toBeGreaterThan(cap);
+    expect(recruit(st, 'one').ok).toBe(true);
+  });
+
+  it('réserve le recrutement ×10 à la fin de l’apprentissage', () => {
+    const st = createInitialState();
+    st.gold = 100000;
+    expect(recruit(st, 'ten').ok).toBe(false);
+    st.campaignLevel = 25;
+    expect(recruit(st, 'ten').ok).toBe(true);
+  });
+});
+
+describe('améliorations', () => {
+  it('donne un choix à l’arrivée, puis un à chaque palier de niveau', () => {
     const st = createInitialState();
     const s = createSoldier(st, 'rare', mulberry32(1));
     st.soldiers.push(s);
-    for (let i = 0; i < UPGRADE_PICKS; i++) {
-      expect(s.upgradeChoices).toHaveLength(UPGRADE_CHOICES);
-      expect(pickUpgrade(st, s.id, 'inconnue')).toBe(false);
-      expect(pickUpgrade(st, s.id, s.upgradeChoices![0])).toBe(true);
-    }
-    expect(s.upgrades).toHaveLength(UPGRADE_PICKS);
-    expect(new Set(s.upgrades).size).toBe(UPGRADE_PICKS);
+    expect(s.picksLeft).toBe(1);
+    expect(s.upgradeChoices).toHaveLength(UPGRADE_CHOICES);
+    expect(pickUpgrade(st, s.id, 'inconnue')).toBe(false);
+    expect(pickUpgrade(st, s.id, s.upgradeChoices![0])).toBe(true);
     expect(s.upgradeChoices).toBeNull();
-    expect(pickUpgrade(st, s.id, 'vitality')).toBe(false);
-
-    s.picksLeft = 0;
-    s.level = 5;
+    s.level = PICK_LEVELS[1] - 1;
+    grantLevelPicks(s);
+    expect(s.picksLeft).toBe(0);
+    s.level = PICK_LEVELS[1];
     grantLevelPicks(s);
     expect(s.picksLeft).toBe(1);
+    expect(entitledPicks(MAX_LEVEL)).toBe(MAX_UPGRADES);
+  });
+
+  it('permet de reprendre une amélioration à rangs jusqu’à son rang max', () => {
+    const st = createInitialState();
+    const s = createSoldier(st, 'common', mulberry32(2));
+    st.soldiers.push(s);
+    const power = UPGRADES_BY_ID.power;
+    s.level = MAX_LEVEL - 1;
+    s.upgrades = [];
+    for (let r = 0; r < maxRank(power); r++) {
+      grantLevelPicks(s);
+      s.upgradeChoices = ['power'];
+      expect(pickUpgrade(st, s.id, 'power')).toBe(true);
+    }
+    expect(upgradeRank(s, 'power')).toBe(maxRank(power));
+    s.upgradeChoices = ['power'];
+    expect(pickUpgrade(st, s.id, 'power')).toBe(false);
+    // une fois au rang max, elle n'est plus proposée
+    for (let i = 0; i < 20; i++) {
+      s.upgradeChoices = null;
+      grantLevelPicks(s, mulberry32(i));
+      expect(s.upgradeChoices ?? []).not.toContain('power');
+    }
+  });
+
+  it('conseille la proposition qui renforce le plus le soldat', () => {
+    const st = stateWithSoldiers(1, 5);
+    const [s] = st.soldiers;
+    s.picksLeft = 1;
+    s.upgradeChoices = ['studious', 'power', 'scope'];
+    expect(recommendedUpgrade(st, s)).toBe('power');
+  });
+
+  it('relance les propositions contre de l’or', () => {
+    const st = stateWithSoldiers(1, 5);
+    const [s] = st.soldiers;
+    grantLevelPicks(s);
+    st.gold = rerollCost(s) - 1;
+    expect(rerollUpgrades(st, s.id).ok).toBe(false);
+    st.gold = rerollCost(s);
+    expect(rerollUpgrades(st, s.id, mulberry32(4)).ok).toBe(true);
+    expect(st.gold).toBe(0);
     expect(s.upgradeChoices).toHaveLength(UPGRADE_CHOICES);
   });
 });
@@ -196,33 +261,23 @@ describe('titres et légion d’honneur', () => {
     expect(s.titles).toEqual(['legende']);
   });
 
-  it('retire les améliorations choisies et repart au niveau 1 avec des choix de légende', () => {
+  it('retire les améliorations choisies et repart au niveau 1, avec des emplacements en plus', () => {
     const st = stateWithSoldiers(1, MAX_LEVEL);
     const [s] = st.soldiers;
     s.titles = ['legende'];
-    s.upgrades = ['vitality', 'power', 'sprint'];
+    s.upgrades = ['vitality', 'power', 'power'];
     s.picksLeft = 0;
     s.trainingsLeft = 0;
-    expect(legionOfHonor(st, s.id, ['power', 'sprint'])).toBe(true);
-    expect(s.upgrades).toEqual(['vitality']);
+    expect(legionOfHonor(st, s.id, ['power'])).toBe(true);
+    expect(s.upgrades).toEqual(['vitality', 'power']);
     expect(s.level).toBe(1);
     expect(s.xp).toBe(0);
-    expect(s.picksLeft).toBe(UPGRADE_PICKS - 1);
+    expect(s.legions).toBe(1);
+    expect(upgradeCap(s)).toBe(MAX_UPGRADES + LEGION_PICKS);
+    expect(s.picksLeft).toBe(1 + LEGION_PICKS - 2);
     expect(s.trainingsLeft).toBe(TRAINING_PER_SOLDIER);
-    expect(s.upgradeChoices).toHaveLength(UPGRADE_CHOICES);
-    expect(s.upgradeChoices!.every((id) => LEGEND_UPGRADES.some((u) => u.id === id))).toBe(true);
+    expect(s.upgradeChoices!.some((id) => LEGEND_UPGRADES.some((u) => u.id === id))).toBe(true);
     expect(s.titles).toEqual(['legende', 'legion']);
-  });
-
-  it('rattrape la courbe après la légion selon le nombre de compétences gardées', () => {
-    for (const [kept, picks] of [[0, 3], [2, 1], [3, 0], [5, 0]] as const) {
-      const st = stateWithSoldiers(1, MAX_LEVEL);
-      const [s] = st.soldiers;
-      s.upgrades = UPGRADES.slice(0, kept).map((u) => u.id);
-      s.picksLeft = 0;
-      expect(legionOfHonor(st, s.id, [])).toBe(true);
-      expect(s.picksLeft).toBe(picks);
-    }
   });
 
   it('ne dépasse jamais le plafond de compétences, légion ou non', () => {
@@ -233,7 +288,7 @@ describe('titres et légion d’honneur', () => {
     expect(legionOfHonor(st, s.id, [])).toBe(true);
     s.level = MAX_LEVEL;
     grantLevelPicks(s);
-    expect(s.upgrades.length + s.picksLeft).toBeLessThanOrEqual(MAX_UPGRADES);
+    expect(s.upgrades.length + s.picksLeft).toBe(upgradeCap(s));
   });
 
   it('refuse la légion avant le niveau max ou avec des améliorations en attente', () => {
@@ -248,24 +303,6 @@ describe('titres et légion d’honneur', () => {
 
   it('n’offre aucun choix d’amélioration au niveau max', () => {
     expect(entitledPicks(MAX_LEVEL)).toBe(entitledPicks(MAX_LEVEL - 1));
-    const st = stateWithSoldiers(1, MAX_LEVEL);
-    const [s] = st.soldiers;
-    s.upgrades = [];
-    grantLevelPicks(s);
-    expect(s.picksLeft).toBe(entitledPicks(MAX_LEVEL - 1));
-    expect(s.upgradeChoices).not.toBeNull();
-  });
-
-  it('plafonne le nombre d’améliorations', () => {
-    const st = stateWithSoldiers(1, 4);
-    const [s] = st.soldiers;
-    s.upgrades = UPGRADES.slice(0, MAX_UPGRADES).map((u) => u.id);
-    s.picksLeft = 0;
-    s.upgradeChoices = null;
-    s.level = 5;
-    grantLevelPicks(s);
-    expect(s.picksLeft).toBe(0);
-    expect(s.upgradeChoices).toBeNull();
   });
 });
 
@@ -284,7 +321,7 @@ describe('entraînement et campagne', () => {
   });
 
   it('refuse un niveau verrouillé, puis donne une arme à la première victoire', () => {
-    const st = stateWithSoldiers(4, 3);
+    const st = stateWithSoldiers(3, 3);
     const squad = st.soldiers.map((s) => s.id);
     const weapons = st.weapons.length;
     expect(launchBattle(st, { mode: 'campaign', squad, level: 2 }).ok).toBe(false);
@@ -406,35 +443,27 @@ describe('boucliers', () => {
 });
 
 describe('choix automatique des améliorations', () => {
-  it('reste verrouillé tant que le total d’éliminations n’est pas atteint', () => {
+  it('reste verrouillé avant son palier de campagne', () => {
     const st = stateWithSoldiers(2, 1);
-    st.stats.kills = AUTO_PICK_KILLS - 1;
+    st.campaignLevel = unlockLevel('autopick') - 1;
     expect(autoPickUnlocked(st)).toBe(false);
     expect(autoPickAll(st, mulberry32(1))).toBe(0);
-    expect(st.soldiers.every((s) => s.picksLeft === UPGRADE_PICKS)).toBe(true);
+    expect(st.soldiers.every((s) => s.picksLeft === 1)).toBe(true);
   });
 
-  it('choisit toutes les améliorations en attente de toute l’escouade une fois débloqué', () => {
+  it('applique la proposition conseillée à toute l’escouade une fois débloqué', () => {
     const st = stateWithSoldiers(3, 1);
-    st.stats.kills = AUTO_PICK_KILLS;
+    st.campaignLevel = unlockLevel('autopick');
     st.soldiers[1].level = 6;
     for (const s of st.soldiers) grantLevelPicks(s);
     const expected = st.soldiers.reduce((n, s) => n + s.picksLeft, 0);
+    const advised = recommendedUpgrade(st, st.soldiers[0]);
     expect(autoPickAll(st, mulberry32(7))).toBe(expected);
+    expect(st.soldiers[0].upgrades[0]).toBe(advised);
     for (const s of st.soldiers) {
       expect(s.picksLeft).toBe(0);
       expect(s.upgradeChoices).toBeNull();
-      expect(new Set(s.upgrades).size).toBe(s.upgrades.length);
     }
-  });
-
-  it('ne choisit que parmi les propositions du soldat', () => {
-    const st = stateWithSoldiers(1, 1);
-    st.stats.kills = AUTO_PICK_KILLS;
-    const [s] = st.soldiers;
-    const offered = [...(s.upgradeChoices ?? [])];
-    autoPickAll(st, mulberry32(3));
-    expect(offered).toContain(s.upgrades[0]);
   });
 
   it('compte les éliminations de chaque combat dans le total global', () => {

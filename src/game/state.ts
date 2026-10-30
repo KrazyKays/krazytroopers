@@ -1,4 +1,5 @@
-﻿import { MAX_LEVEL, START_FREE_PULLS, START_GOLD, START_WEAPONS, TRAINING_PER_SOLDIER } from './data';
+﻿import { MAX_LEVEL, STAR_CHEST_EVERY, START_FREE_PULLS, START_GOLD, START_LOOT, START_WEAPONS, TRAINING_PER_SOLDIER } from './data';
+import { grantLevelPicks } from './upgrades';
 import type { GameState, Soldier } from './types';
 
 const SAVE_KEY = 'krazy-troopers-save-v1';
@@ -22,6 +23,11 @@ export function createInitialState(): GameState {
     dailyStreak: 0,
     survival: null,
     bestWave: 0,
+    tactic: 'balanced',
+    campaignStars: {},
+    starChests: 0,
+    claimedGoals: [],
+    lootMeter: START_LOOT,
   };
   for (const defId of START_WEAPONS) st.weapons.push({ uid: `w${st.nextId++}`, defId });
   return st;
@@ -40,6 +46,14 @@ function isValidState(x: unknown): x is GameState {
   );
 }
 
+// Sauvegardes antérieures aux étoiles : chaque niveau terminé compte pour une étoile, sans coffre rétroactif.
+function starsOf(data: GameState): Pick<GameState, 'campaignStars' | 'starChests'> {
+  if (data.campaignStars && typeof data.campaignStars === 'object') return { campaignStars: data.campaignStars, starChests: data.starChests ?? 0 };
+  const campaignStars: Record<number, number> = {};
+  for (let l = 1; l <= data.campaignLevel; l++) campaignStars[l] = 1;
+  return { campaignStars, starChests: Math.floor(data.campaignLevel / STAR_CHEST_EVERY) };
+}
+
 export function parseSave(raw: string): GameState | null {
   try {
     const data = JSON.parse(raw);
@@ -54,17 +68,28 @@ export function parseSave(raw: string): GameState | null {
           dailyStreak: typeof data.dailyStreak === 'number' ? data.dailyStreak : 0,
           survival: data.survival ?? null,
           bestWave: typeof data.bestWave === 'number' ? data.bestWave : 0,
+          tactic: data.tactic ?? 'balanced',
+          ...starsOf(data),
+          claimedGoals: Array.isArray(data.claimedGoals) ? data.claimedGoals : [],
+          lootMeter: typeof data.lootMeter === 'number' ? data.lootMeter : START_LOOT,
           // Sauvegardes antérieures au compteur global : on reprend les éliminations encore connues des soldats.
           stats: {
             ...data.stats,
             kills: data.stats?.kills ?? data.soldiers.reduce((n: number, s: Soldier) => n + (s.kills ?? 0), 0),
           },
-          soldiers: data.soldiers.map((s: Soldier) => ({
-            ...s,
-            favorite: !!s.favorite,
-            titles: s.titles ?? (s.level >= MAX_LEVEL ? ['legende'] : []),
-            trainingsLeft: s.trainingsLeft ?? TRAINING_PER_SOLDIER,
-          })),
+          soldiers: data.soldiers.map((s: Soldier) => {
+            const titles = s.titles ?? (s.level >= MAX_LEVEL ? ['legende'] : []);
+            const soldier: Soldier = {
+              ...s,
+              favorite: !!s.favorite,
+              titles,
+              trainingsLeft: s.trainingsLeft ?? TRAINING_PER_SOLDIER,
+              legions: s.legions ?? (titles.includes('legion') ? 1 : 0),
+            };
+            // les paliers d'amélioration ont changé : on recale les choix en attente, sans rien retirer
+            grantLevelPicks(soldier);
+            return soldier;
+          }),
         }
       : null;
   } catch {

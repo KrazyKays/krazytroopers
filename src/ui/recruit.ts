@@ -1,10 +1,10 @@
 import { PITY_LIMIT, PULL10_COST, PULL_COST, RARITIES, RARITY_ORDER, WEAPON_PULL10_COST, WEAPON_PULL_COST, WEAPONS, WEAPONS_BY_ID } from '../game/data';
 import { isUnlocked, unlockLevel } from '../game/progress';
-import { buyWeapons, recruit } from '../game/roster';
+import { barracksCap, buyWeapons, nextBarracks, recruit } from '../game/roster';
 import { getState, mutate } from '../game/state';
 import type { WeaponDef } from '../game/types';
 import { h } from './dom';
-import { fmt, soldierCard, toast, weaponIcon, weaponTraits } from './components';
+import { familyTag, fmt, soldierCard, toast, weaponIcon, weaponTraits } from './components';
 import { playGacha } from './gacha';
 import { goTo } from './nav';
 import { openSoldier } from './roster';
@@ -16,6 +16,8 @@ type WeaponMode = 'one' | 'ten';
 function againButton(close: () => void, label: string, can: boolean, run: () => void): HTMLElement | false {
   return can && h('button', { class: 'btn btn-gold', onclick: () => { close(); run(); } }, label);
 }
+
+const hasRoom = (n: number): boolean => barracksCap(getState()) - getState().soldiers.length >= n;
 
 function doPull(mode: SoldierMode): void {
   const result = mutate((st) => recruit(st, mode));
@@ -32,10 +34,10 @@ function doPull(mode: SoldierMode): void {
     actions: (close) =>
       [
         h('button', { class: 'btn', onclick: close }, 'Continuer'),
-        h('button', { class: 'btn', onclick: () => { close(); openSoldier(soldiers[0].id); } }, 'Améliorer les recrues'),
+        h('button', { class: 'btn', onclick: () => { close(); openSoldier(soldiers[0].id); } }, soldiers.length > 1 ? 'Améliorer les recrues' : 'Choisir son amélioration'),
         mode === 'free'
-          ? againButton(close, `Encore un tirage gratuit (${getState().freePulls})`, getState().freePulls > 0, () => doPull('free'))
-          : againButton(close, `Encore ×${soldiers.length} — ${fmt(mode === 'ten' ? PULL10_COST : PULL_COST)} or`, getState().gold >= (mode === 'ten' ? PULL10_COST : PULL_COST), () => doPull(mode)),
+          ? againButton(close, `Encore un tirage gratuit (${getState().freePulls})`, getState().freePulls > 0 && hasRoom(1), () => doPull('free'))
+          : againButton(close, `Encore ×${soldiers.length} — ${fmt(mode === 'ten' ? PULL10_COST : PULL_COST)} or`, getState().gold >= (mode === 'ten' ? PULL10_COST : PULL_COST) && hasRoom(soldiers.length), () => doPull(mode)),
       ].filter((b): b is HTMLElement => !!b),
   });
 }
@@ -49,7 +51,7 @@ export function weaponFront(def: WeaponDef, isNew: boolean): HTMLElement {
     isNew && h('span', { class: 'gacha-new' }, 'Nouveau !'),
     h('b', { class: 'weapon-name', style: `color:${info.color}` }, def.name),
     h('div', { class: 'weapon-art' }, weaponIcon(def)),
-    h('small', { class: 'rarity-tag', style: `color:${info.color}` }, info.label),
+    h('small', { class: 'rarity-tag', style: `color:${info.color}` }, info.label, ' ', familyTag(def)),
     h('small', { class: 'muted' }, `${def.heal ? 'Soins/s' : 'DPS'} ${fmt(def.damage / def.cooldown, 1)} · Portée ${fmt(def.range)}${def.armor ? ` · Armure +${def.armor}` : ''}`),
     traits.length > 0 && h('small', { class: 'weapon-traits' }, traits.join(' · ')),
   );
@@ -81,13 +83,32 @@ function doWeaponPull(mode: WeaponMode): void {
   });
 }
 
-function pullButton(label: string, cost: number, gold: number, run: () => void, bonus?: string): HTMLElement {
+function pullButton(label: string, cost: number, gold: number, run: () => void, bonus?: string, blocked?: string): HTMLElement {
   const missing = cost - gold;
   return h(
     'button',
-    { class: 'btn btn-big btn-pull', disabled: missing > 0, onclick: run },
+    { class: 'btn btn-big btn-pull', disabled: missing > 0 || !!blocked, onclick: run },
     label,
-    h('small', null, missing > 0 ? `Il manque ${fmt(missing)} or` : bonus),
+    h('small', null, blocked ?? (missing > 0 ? `Il manque ${fmt(missing)} or` : bonus)),
+  );
+}
+
+/** Capacité de la caserne, et ce qui l'agrandira. */
+function barracksPanel(cap: number, count: number): HTMLElement {
+  const st = getState();
+  const next = nextBarracks(st);
+  const full = count >= cap;
+  return h(
+    'div',
+    { class: `barracks${full ? ' full' : ''}` },
+    h('div', { class: 'barracks-head' }, h('b', null, `🏕️ Caserne : ${count} / ${cap} soldats`), full && h('span', { class: 'tag tag-accent' }, 'PLEINE')),
+    h('div', { class: 'barracks-beds' }, Array.from({ length: cap }, (_, i) => h('span', { class: i < count ? 'bed used' : 'bed' }))),
+    h(
+      'small',
+      { class: 'muted' },
+      next ? `S'agrandit à ${next.cap} places au niveau ${next.level} de la campagne.` : 'Caserne à sa taille maximale.',
+      full && ' Renvoyez un soldat pour faire de la place.',
+    ),
   );
 }
 
@@ -123,12 +144,16 @@ function banner(cls: string, emblem: HTMLElement, title: string, tagline: string
 
 export function renderRecruit(): HTMLElement {
   const st = getState();
+  const cap = barracksCap(st);
+  const room = cap - st.soldiers.length;
+  const bulk = isUnlocked(st, 'bulk');
+  const bulkLock = `🔒 Niveau ${unlockLevel('bulk')} de la campagne`;
+  const fullMsg = room <= 0 ? 'Caserne pleine' : undefined;
   const legendaries = WEAPONS.filter((w) => w.droppable && w.rarity === 'legendary');
   const armoryOpen = isUnlocked(st, 'armory');
   return h(
     'section',
     null,
-    h('h2', null, 'Recrutement'),
     h('p', { class: 'muted' }, "Tirez de nouveaux soldats et de nouvelles armes au hasard. Plus la rareté est élevée, plus ils sont puissants. L'or provient des combats."),
     h(
       'div',
@@ -137,15 +162,16 @@ export function renderRecruit(): HTMLElement {
         'banner-soldier',
         h('span', null, '★'),
         'Recrues',
-        "Chaque soldat recruté reçoit 3 choix d'amélioration parmi 3 propositions.",
+        "Chaque recrue arrive avec une première amélioration à choisir.",
+        barracksPanel(cap, st.soldiers.length),
         ratesBar(),
         pityMeter(st.pity, 'Soldat'),
         h(
           'div',
           { class: 'recruit-box' },
-          st.freePulls > 0 && h('button', { class: 'btn btn-big btn-gold btn-free', onclick: () => doPull('free') }, `Tirage gratuit (${st.freePulls} restant${st.freePulls > 1 ? 's' : ''})`),
-          pullButton(`Recruter ×1 — ${PULL_COST} or`, PULL_COST, st.gold, () => doPull('one')),
-          pullButton(`Recruter ×10 — ${fmt(PULL10_COST)} or`, PULL10_COST, st.gold, () => doPull('ten'), `1 soldat offert (${fmt(PULL_COST * 10 - PULL10_COST)} or d'économie)`),
+          st.freePulls > 0 && h('button', { class: 'btn btn-big btn-gold btn-free', disabled: room <= 0, onclick: () => doPull('free') }, room <= 0 ? `Caserne pleine (${st.freePulls} tirage${st.freePulls > 1 ? 's' : ''} gratuit${st.freePulls > 1 ? 's' : ''} en réserve)` : `Tirage gratuit (${st.freePulls} restant${st.freePulls > 1 ? 's' : ''})`),
+          pullButton(`Recruter ×1 — ${PULL_COST} or`, PULL_COST, st.gold, () => doPull('one'), undefined, fullMsg),
+          pullButton(`Recruter ×10 — ${fmt(PULL10_COST)} or`, PULL10_COST, st.gold, () => doPull('ten'), `1 soldat offert (${fmt(PULL_COST * 10 - PULL10_COST)} or d'économie)`, !bulk ? bulkLock : room < 10 ? `Il faut 10 places libres (${Math.max(0, room)})` : undefined),
         ),
       ),
       banner(
@@ -162,7 +188,7 @@ export function renderRecruit(): HTMLElement {
           'div',
           { class: 'recruit-box' },
           pullButton(`Acheter ×1 — ${WEAPON_PULL_COST} or`, WEAPON_PULL_COST, st.gold, () => doWeaponPull('one')),
-          pullButton(`Acheter ×10 — ${fmt(WEAPON_PULL10_COST)} or`, WEAPON_PULL10_COST, st.gold, () => doWeaponPull('ten'), `1 arme offerte (${fmt(WEAPON_PULL_COST * 10 - WEAPON_PULL10_COST)} or d'économie)`),
+          pullButton(`Acheter ×10 — ${fmt(WEAPON_PULL10_COST)} or`, WEAPON_PULL10_COST, st.gold, () => doWeaponPull('ten'), `1 arme offerte (${fmt(WEAPON_PULL_COST * 10 - WEAPON_PULL10_COST)} or d'économie)`, bulk ? undefined : bulkLock),
         ),
       ),
     ),

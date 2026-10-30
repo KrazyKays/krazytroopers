@@ -1,6 +1,7 @@
 export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 export type Team = 'ally' | 'enemy';
 export type TitleId = 'legende' | 'legion';
+export type TacticId = 'balanced' | 'assault' | 'bulwark' | 'hunters';
 
 export interface Appearance {
   skin: number;
@@ -27,6 +28,8 @@ export interface Soldier {
   trainingsLeft: number;
   kills: number;
   favorite: boolean;
+  /** Nombre de Légions d'honneur reçues : chacune ouvre des emplacements d'amélioration supplémentaires. */
+  legions: number;
 }
 
 export interface WeaponItem {
@@ -61,6 +64,16 @@ export interface GameState {
   survival: SurvivalRun | null;
   /** Meilleure vague atteinte en survie. */
   bestWave: number;
+  /** Tactique d'escouade appliquée aux combats. */
+  tactic: TacticId;
+  /** Meilleur nombre d'étoiles (1 à 3) obtenu sur chaque niveau de campagne. */
+  campaignStars: Record<number, number>;
+  /** Coffres d'étoiles déjà ouverts. */
+  starChests: number;
+  /** Objectifs dont la récompense a été réclamée. */
+  claimedGoals: string[];
+  /** Jauge de butin : une arme tombe chaque fois qu'elle se remplit (voir LOOT_METER_MAX). */
+  lootMeter: number;
 }
 
 export interface SurvivalRun {
@@ -136,10 +149,15 @@ export interface Mods {
   secondWind: boolean;
 }
 
+export type UpgradeKind = 'attack' | 'defense' | 'mobility' | 'support';
+
 export interface UpgradeDef {
   id: string;
   name: string;
   desc: string;
+  kind: UpgradeKind;
+  /** Nombre de fois où l'amélioration peut être prise : ses effets s'additionnent (1 par défaut). */
+  maxRank?: number;
   mods: Partial<Mods>;
 }
 
@@ -159,6 +177,8 @@ export interface CombatStats {
   berserk: boolean;
   secondWind: boolean;
   heal: boolean;
+  /** Vise l'ennemi le plus affaibli à portée plutôt que le plus proche (tactique « Chasse aux blessés »). */
+  focusWeak?: boolean;
 }
 
 export interface SpriteLook {
