@@ -70,6 +70,7 @@ describe('recrutement', () => {
     const st = createInitialState();
     st.gold = 100000;
     st.campaignLevel = 25; // caserne assez grande pour toute la série
+    st.totalPulls = 1; // le tout premier tirage a sa propre garantie
     const rng = () => 0; // tire toujours le plus commun
     const rarities: string[] = [];
     for (let i = 0; i < PITY_LIMIT; i++) {
@@ -78,6 +79,15 @@ describe('recrutement', () => {
     }
     expect(rarities.slice(0, PITY_LIMIT - 1).every((r) => r === 'common')).toBe(true);
     expect(['epic', 'legendary']).toContain(rarities[PITY_LIMIT - 1]);
+  });
+
+  it('garantit une première recrue Épique, une seule fois', () => {
+    const st = createInitialState();
+    const rng = () => 0;
+    const first = recruit(st, 'free', rng);
+    const second = recruit(st, 'free', rng);
+    expect(first.ok && first.soldiers[0].rarity).toBe('epic');
+    expect(second.ok && second.soldiers[0].rarity).toBe('common');
   });
 
   it("vend des armes à l'armurerie, avec sa propre garantie", () => {

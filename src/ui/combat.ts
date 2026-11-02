@@ -19,6 +19,9 @@ import {
   starGold,
   survivalWaveGold,
   totalStars,
+  towerGold,
+  TOWER_LEGENDARY_EVERY,
+  TOWER_MYTHIC_EVERY,
   trainingFee,
   trainingGold,
   trainingXp,
@@ -39,6 +42,11 @@ import {
   simulationPool,
   survivalBaseLevel,
   survivalWaveLevel,
+  buildTowerEnemies,
+  isTowerBoss,
+  TOWER_CURSE_EVERY,
+  towerCurses,
+  towerLevel,
   type ArmyPreview,
   type SimulationConfig,
 } from '../game/enemies';
@@ -49,22 +57,25 @@ import { getState, mutate, refresh } from '../game/state';
 import { weaponForSoldier } from '../game/stats';
 import type { GameState, Soldier } from '../game/types';
 import { h } from './dom';
-import { openBattle } from './battleView';
+import { boonPicker, openBattle } from './battleView';
+import { biomeOfChapter, CHAPTER_SIZE, chapterOf } from '../game/biomes';
+import { BOONS_BY_ID } from '../game/survival';
 import { confirmDialog, fmt, fold, getSquadSort, positionPicker, progressBar, soldierSprite, squadToolbar, squadView, stars, toast } from './components';
 import { goTo } from './nav';
 import { openSoldier } from './roster';
 
-export type CombatMode = 'training' | 'campaign' | 'daily' | 'survival' | 'fodder' | 'simulation';
+export type CombatMode = 'training' | 'campaign' | 'daily' | 'survival' | 'tower' | 'fodder' | 'simulation';
 
 let mode: CombatMode = 'campaign';
 
 /** Modes soumis à un seuil de campagne. */
-const MODE_UNLOCK: Partial<Record<CombatMode, UnlockId>> = { daily: 'daily', survival: 'survival', fodder: 'fodder', simulation: 'simulation' };
+const MODE_UNLOCK: Partial<Record<CombatMode, UnlockId>> = { daily: 'daily', survival: 'survival', tower: 'tower', fodder: 'fodder', simulation: 'simulation' };
 
 const MODES: { id: CombatMode; icon: string; label: string }[] = [
   { id: 'campaign', icon: '🚩', label: 'Campagne' },
   { id: 'daily', icon: '📅', label: 'Défi du jour' },
   { id: 'survival', icon: '🔥', label: 'Survie' },
+  { id: 'tower', icon: '🗼', label: 'Tour sans fin' },
   { id: 'fodder', icon: '💣', label: 'Chair à canon' },
   { id: 'training', icon: '🎯', label: 'Entraînement' },
   { id: 'simulation', icon: '🧪', label: 'Simulation' },
@@ -73,7 +84,10 @@ const MODES: { id: CombatMode; icon: string; label: string }[] = [
 /** Ouvre l'onglet Combat sur un mode donné (utilisé par le QG et le guide). */
 export function openCombat(m: CombatMode): void {
   setMode(m);
-  if (m === 'campaign') campaignPick = null;
+  if (m === 'campaign') {
+    campaignPick = null;
+    mapChapter = null;
+  }
   goTo('combat');
 }
 
@@ -95,6 +109,8 @@ function battleRequest(st: GameState, level: number): BattleRequest {
       return { mode: 'daily', squad };
     case 'survival':
       return { mode: 'survival', squad: st.survival?.squad ?? squad };
+    case 'tower':
+      return { mode: 'tower', squad };
     default:
       return { mode: 'campaign', squad, level };
   }
@@ -102,7 +118,7 @@ function battleRequest(st: GameState, level: number): BattleRequest {
 
 function currentBattleEstimate(st: GameState, req: BattleRequest): SimulationEstimate | null {
   const soldiers = req.squad.map((id) => st.soldiers.find((s) => s.id === id)).filter((s): s is Soldier => !!s);
-  const key = JSON.stringify([req, dailyKey(), st.campaignLevel, st.survival, st.tactic, soldiers.map((s) => [s.level, s.upgrades, s.position, st.weapons.find((w) => w.uid === s.weaponUid)?.defId ?? null])]);
+  const key = JSON.stringify([req, dailyKey(), st.campaignLevel, st.towerFloor, st.survival, st.tactic, soldiers.map((s) => { const w = st.weapons.find((x) => x.uid === s.weaponUid); return [s.level, s.upgrades, s.position, w ? [w.defId, w.affix, w.plus] : null]; })]);
   if (battleEstimate?.key !== key) {
     const res = estimateBattle(st, req);
     if (!res.ok) return null;
@@ -124,11 +140,20 @@ function estimateLine(est: SimulationEstimate): HTMLElement {
   );
 }
 
-// Frise de progression : niveaux terminés (avec leurs étoiles), niveau à conquérir, boss, et quelques niveaux verrouillés
+// Carte de campagne : un chapitre de CHAPTER_SIZE niveaux par décor, parcouru en lacet (niveaux terminés, à conquérir, verrouillés)
+let mapChapter: number | null = null;
+
 function campaignTrack(st: GameState, level: number): HTMLElement {
   const next = st.campaignLevel + 1;
-  const start = Math.max(1, Math.min(level - 5, next - 8));
-  const nodes = Array.from({ length: 12 }, (_, i) => start + i).map((n) => {
+  const chapter = mapChapter ?? chapterOf(level);
+  const lastChapter = chapterOf(next);
+  const biome = biomeOfChapter(chapter);
+  const first = chapter * CHAPTER_SIZE + 1;
+  const half = CHAPTER_SIZE / 2;
+  const levels = Array.from({ length: CHAPTER_SIZE }, (_, i) => first + i);
+  const cleared = levels.filter((n) => n <= st.campaignLevel).length;
+  const chapterStars = levels.reduce((sum, n) => sum + (st.campaignStars[n] ?? 0), 0);
+  const nodes = levels.map((n, i) => {
     const state = n <= st.campaignLevel ? 'cleared' : n === next ? 'next' : 'locked';
     const boss = isBossLevel(n);
     const got = st.campaignStars[n] ?? 0;
@@ -137,9 +162,11 @@ function campaignTrack(st: GameState, level: number): HTMLElement {
       'button',
       {
         class: `track-node track-${state}${boss ? ' track-boss' : ''}${n === level ? ' current' : ''}`,
+        // en lacet : la première moitié de gauche à droite, la seconde de droite à gauche
+        style: `grid-row:${i < half ? 1 : 2};grid-column:${i < half ? i + 1 : CHAPTER_SIZE - i}`,
         disabled: state === 'locked',
         title: boss ? `${label} (boss)` : label,
-        onclick: () => { campaignPick = n >= next ? null : n; refresh(); },
+        onclick: () => { campaignPick = n >= next ? null : n; mapChapter = null; refresh(); },
       },
       h('span', { class: 'track-num' }, boss ? '☠' : String(n)),
       state === 'cleared' ? stars(got, 3, 'stars-mini') : h('span', { class: 'track-mark' }, state === 'next' ? 'À faire' : '🔒'),
@@ -147,10 +174,16 @@ function campaignTrack(st: GameState, level: number): HTMLElement {
   });
   return h(
     'div',
-    { class: 'campaign-track' },
-    h('button', { class: 'btn btn-icon', disabled: level <= 1, title: 'Niveau précédent', onclick: () => { campaignPick = level - 1; refresh(); } }, '‹'),
-    h('div', { class: 'track-nodes' }, nodes),
-    h('button', { class: 'btn btn-icon', disabled: level >= next, title: 'Niveau suivant', onclick: () => { campaignPick = level + 1 >= next ? null : level + 1; refresh(); } }, '›'),
+    { class: `campaign-map biome-${biome.id}` },
+    h(
+      'div',
+      { class: 'map-head' },
+      h('button', { class: 'btn btn-icon', disabled: chapter <= 0, title: 'Chapitre précédent', onclick: () => { mapChapter = chapter - 1; refresh(); } }, '‹'),
+      h('div', { class: 'map-title' }, h('b', null, `${biome.icon} Chapitre ${chapter + 1} · ${biome.name}`), h('small', null, biome.tagline)),
+      h('button', { class: 'btn btn-icon', disabled: chapter >= lastChapter, title: 'Chapitre suivant', onclick: () => { mapChapter = chapter + 1; refresh(); } }, '›'),
+    ),
+    h('div', { class: 'map-path', style: `grid-template-columns:repeat(${half}, 1fr)` }, nodes),
+    h('small', { class: 'map-progress' }, `${cleared} / ${CHAPTER_SIZE} niveaux · ${chapterStars} / ${CHAPTER_SIZE * 3} ★`),
   );
 }
 
@@ -216,7 +249,7 @@ function toggleSoldier(st: GameState, s: Soldier): void {
   refresh();
 }
 
-const TITLES: Record<Exclude<CombatMode, 'simulation' | 'campaign' | 'fodder'>, string> = { training: 'Entraînement', daily: 'Défi du jour', survival: 'Survie' };
+const TITLES: Record<Exclude<CombatMode, 'simulation' | 'campaign' | 'fodder'>, string> = { training: 'Entraînement', daily: 'Défi du jour', survival: 'Survie', tower: 'Tour sans fin' };
 
 function launch(): void {
   const st = getState();
@@ -254,18 +287,21 @@ function launch(): void {
 
 function launchFight(st: GameState, level: number): void {
   const wave = (st.survival?.wave ?? 0) + 1;
+  const floor = st.towerFloor + 1;
   const res = mutate((state) => launchBattle(state, battleRequest(state, level)));
   if (!res.ok) {
     toast(res.error, 'bad');
     return;
   }
-  const title = mode === 'campaign' ? `Campagne — niveau ${level}` : mode === 'survival' ? `Survie — vague ${wave}` : TITLES[mode as keyof typeof TITLES];
+  const title = mode === 'campaign' ? `Campagne — niveau ${level}` : mode === 'survival' ? `Survie — vague ${wave}` : mode === 'tower' ? `Tour sans fin — étage ${floor}` : TITLES[mode as keyof typeof TITLES];
   // Les survivants restent sélectionnés : on peut enchaîner le combat suivant directement depuis l'écran de résultat
   const after = getState();
   pruneSelection(after);
   let replay: { label: string; run: () => void } | undefined;
   if (mode === 'survival') {
     if (after.survival) replay = { label: `Vague suivante (${after.survival.wave + 1})`, run: launch };
+  } else if (mode === 'tower') {
+    if (selected.size > 0) replay = { label: after.towerFloor >= floor ? `Étage suivant (${after.towerFloor + 1})` : `Retenter l'étage ${floor}`, run: launch };
   } else if (mode !== 'daily' && selected.size > 0) {
     const nextLevel = Math.min(campaignPick ?? after.campaignLevel + 1, after.campaignLevel + 1);
     const replayLabel = mode === 'training' ? 'Nouvel entraînement' : nextLevel > level ? `Niveau suivant (${nextLevel})` : `Rejouer le niveau ${level}`;
@@ -438,12 +474,15 @@ function survivalInfo(st: GameState): HTMLElement {
       'Survie',
       h('p', null, `Enchaînez des vagues de plus en plus fortes, à partir de la puissance du niveau ${base}. Chaque vague gagnée remplit le pot (${fmt(survivalWaveGold(base))} or pour la première) ; un boss lâche une arme toutes les 5 vagues.`),
       h('p', { class: 'note note-warn' }, `Pas de soin complet : chaque soldat ne récupère que ${Math.round(SURVIVAL_REST_HEAL * 100)} % de ses PV entre deux vagues. Une défaite ne laisse que la moitié du pot, et un tiers des tombés meurt.`),
+      h('p', { class: 'note' }, '🎁 Après chaque vague gagnée, choisissez un bonus parmi trois pour toute l’expédition : dégâts, armure, soins, or en plus, voire un mercenaire.'),
       h('p', { class: 'muted small' }, `Record : vague ${st.bestWave}.`),
     );
   }
   const soldiers = run.squad.map((id) => st.soldiers.find((s) => s.id === id)).filter((s): s is Soldier => !!s);
   const nextLevel = survivalWaveLevel(run.wave + 1, st.campaignLevel);
   const stats = squadStats(st, soldiers);
+  const boons = new Map<string, number>();
+  for (const b of run.boons) boons.set(b, (boons.get(b) ?? 0) + 1);
   return brief(
     '🔥',
     `Expédition : ${run.wave} vague${run.wave > 1 ? 's' : ''} remportée${run.wave > 1 ? 's' : ''}`,
@@ -457,8 +496,40 @@ function survivalInfo(st: GameState): HTMLElement {
         const hp = Math.min(max, run.hp[s.id] ?? max);
         return h('li', null, h('span', null, s.name), progressBar(hp / max, `${fmt(hp)} / ${fmt(max)} PV`, hp / max < 0.35 ? 'progress-bad' : 'progress-good'));
       }),
+      run.mercs.map((m) => h('li', null, h('span', null, `🤠 ${m.name}`), h('small', { class: 'muted' }, `Mercenaire niv. ${m.level}`))),
     ),
+    boons.size > 0 && h('div', { class: 'enemy-list' }, [...boons].map(([id, n]) => h('span', { class: 'reward-chip', title: BOONS_BY_ID[id].desc }, `${BOONS_BY_ID[id].icon} ${BOONS_BY_ID[id].name}${n > 1 ? ` ×${n}` : ''}`))),
+    boonPicker(() => refresh()),
     h('button', { class: 'btn btn-primary', onclick: () => void cashOut() }, `Encaisser ${fmt(run.pot)} or et rentrer`),
+  );
+}
+
+function towerInfo(st: GameState): HTMLElement {
+  const floor = st.towerFloor + 1;
+  const level = towerLevel(floor);
+  const boss = isTowerBoss(floor);
+  const curses = towerCurses(floor);
+  const counts = new Map<string, number>();
+  for (const c of curses) counts.set(c.id, (counts.get(c.id) ?? 0) + 1);
+  const shown = [...new Map(curses.map((c) => [c.id, c])).values()];
+  const nextCurse = Math.floor((floor - 1) / TOWER_CURSE_EVERY) * TOWER_CURSE_EVERY + TOWER_CURSE_EVERY + 1;
+  const reward =
+    floor % TOWER_MYTHIC_EVERY === 0 ? '💠 arme MYTHIQUE garantie'
+    : floor % TOWER_LEGENDARY_EVERY === 0 ? '🔶 arme légendaire garantie'
+    : boss ? '🔫 arme de boss'
+    : false;
+  return brief(
+    '🗼',
+    `Tour sans fin — étage ${floor}${boss ? ' (BOSS)' : ''}`,
+    h('p', null, `Chaque étage est plus dur que le précédent (puissance du niveau ${level}). Tous les ${TOWER_CURSE_EVERY} étages, une malédiction de plus s'ajoute, et elles se cumulent.`),
+    h('div', { class: 'pot' }, h('span', null, 'Record'), h('b', null, `Étage ${st.towerFloor}`)),
+    shown.length > 0
+      ? h('div', { class: 'curse-list' }, h('span', { class: 'muted small' }, 'Malédictions actives'), shown.map((c) => h('span', { class: 'curse-chip', title: c.desc }, `${c.icon} ${c.name}${(counts.get(c.id) ?? 0) > 1 ? ` ×${counts.get(c.id)}` : ''} — ${c.desc}`)))
+      : h('p', { class: 'note note-good small' }, `Aucune malédiction pour l'instant : la première arrive à l'étage ${TOWER_CURSE_EVERY + 1}.`),
+    shown.length > 0 && h('p', { class: 'muted small' }, `Prochaine malédiction à l'étage ${nextCurse}.`),
+    enemyChips(previewUnits(buildTowerEnemies(floor), boss)),
+    rewards(`🪙 ${fmt(towerGold(floor))} or`, `✨ ${fmt(campaignXp(level) * 0.5)} XP`, reward, floor % TOWER_LEGENDARY_EVERY === 0 && '🎟️ 1 tirage'),
+    h('p', { class: 'note note-good small' }, 'Une défaite ne tue personne : la Tour mesure votre puissance, retentez autant que vous voulez.'),
   );
 }
 
@@ -602,6 +673,7 @@ export function renderCombat(): HTMLElement {
         m.id === 'campaign' ? `Niveau ${nextLevel}`
         : m.id === 'daily' ? (dailyDone(st) ? 'Fait' : undefined)
         : m.id === 'survival' && st.survival ? `Vague ${st.survival.wave + 1}`
+        : m.id === 'tower' && isUnlocked(st, 'tower') ? `Étage ${st.towerFloor + 1}`
         : undefined;
       return h(
         'button',
@@ -618,11 +690,13 @@ export function renderCombat(): HTMLElement {
     lockId === 'daily' ? lockedInfo(lockId, '📅', 'Défi du jour', 'Un combat unique par jour, avec une règle spéciale (horde, commando d’élite, deux boss…) et de grosses récompenses : or et arme de boss.')
     : lockId === 'survival' ? lockedInfo(lockId, '🔥', 'Survie', 'Enchaînez les vagues avec les mêmes soldats, sans soin complet entre deux vagues : encaissez vos gains ou risquez tout.')
     : lockId === 'fodder' ? lockedInfo(lockId, '💣', 'Chair à canon', 'Sacrifiez les soldats dont vous ne voulez plus contre un Colosse increvable, pour faire avancer la garantie de recrutement et gagner des tirages à sa mort.')
+    : lockId === 'tower' ? lockedInfo(lockId, '🗼', 'Tour sans fin', 'Des étages sans fin, toujours plus durs, avec des malédictions qui se cumulent : le vrai test de votre armée, avec des armes légendaires et mythiques à la clé.')
     : lockId === 'simulation' ? lockedInfo(lockId, '🧪', 'Simulation', 'Testez votre escouade sans aucun risque face aux adversaires de votre choix, et estimez ses chances.')
     : mode === 'training' ? trainingInfo(st)
     : mode === 'simulation' ? simulationInfo(st)
     : mode === 'daily' ? dailyInfo(st)
     : mode === 'survival' ? survivalInfo(st)
+    : mode === 'tower' ? towerInfo(st)
     : mode === 'fodder' ? fodderInfo(st)
     : campaignInfo(st, level);
 
@@ -632,7 +706,8 @@ export function renderCombat(): HTMLElement {
   const unarmed = picked.filter((s) => !s.weaponUid);
   const fee = mode === 'training' ? trainingFee(picked) : 0;
   const broke = st.gold < fee;
-  const blocked = !!lockId || (mode === 'daily' && dailyDone(st));
+  const choosing = mode === 'survival' && !!st.survival?.choices;
+  const blocked = !!lockId || (mode === 'daily' && dailyDone(st)) || choosing;
   const canLaunch = !blocked && !broke && (runActive ? runSquad.length > 0 : selected.size >= 1);
 
   const prep =
@@ -695,12 +770,14 @@ export function renderCombat(): HTMLElement {
     : mode === 'fodder' ? `Sacrifier ${selected.size} soldat${selected.size > 1 ? 's' : ''}`
     : mode === 'daily' ? 'Relever le défi'
     : mode === 'survival' ? (st.survival ? `Lancer la vague ${st.survival.wave + 1}` : 'Partir en expédition')
+    : mode === 'tower' ? `Attaquer l'étage ${st.towerFloor + 1}`
     : `Lancer le niveau ${level}`;
   const launchBtn = h(
     'button',
     { class: 'btn btn-big btn-primary', disabled: !canLaunch, onclick: launch, title: canLaunch ? 'Lancer le combat' : undefined },
     canLaunch ? `⚔ ${label}`
     : mode === 'daily' && dailyDone(st) ? 'Revenez demain'
+    : choosing ? 'Choisissez d’abord un bonus'
     : runActive ? "Plus aucun soldat dans l'expédition"
     : broke ? `Il manque ${fmt(fee - st.gold)} or`
     : 'Sélectionnez au moins un soldat',

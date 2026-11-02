@@ -1,10 +1,12 @@
-import { MAX_LEVEL, RARITIES, RARITY_ORDER, TITLES, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
+import { MAX_LEVEL, mythicEffect, PULL_RARITIES, RARITIES, TITLES, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
+import { TRAITS_BY_ID } from '../game/traits';
+import { AFFIXES_BY_ID, resolveWeapon } from '../game/weapons';
 import { getState, getVersion, mutate, refresh, replaceState } from '../game/state';
 import { soldierLook } from '../game/look';
 import { computeStats, dps, powerScore, weaponForSoldier, xpForNext } from '../game/stats';
 import { SQUAD_SORTS, sortSquad, type SquadSort } from '../game/roster';
 import { FAMILY_LABELS, POSITIONS, POSITIONS_BY_ID, weaponFamily } from '../game/squad';
-import type { GameState, Rarity, Soldier, TitleId, WeaponDef } from '../game/types';
+import type { GameState, Rarity, Soldier, TitleId, WeaponDef, WeaponItem } from '../game/types';
 import { spriteSvg, weaponSvg } from './avatar';
 import { h, html, type Child } from './dom';
 
@@ -102,7 +104,28 @@ export function weaponTraits(w: WeaponDef): string[] {
     w.crit && `Critique +${pct(w.crit)}`,
     w.dodge && `Esquive +${pct(w.dodge)}`,
     w.speedPct && `Vitesse +${pct(w.speedPct)}`,
+    mythicEffect(w),
   ].filter((t): t is string => !!t);
+}
+
+/** Arme réelle d'un exemplaire de l'arsenal (préfixe et améliorations compris). */
+export function itemDef(item: WeaponItem): WeaponDef {
+  return resolveWeapon(item);
+}
+
+/** Préfixe et niveau d'amélioration d'un exemplaire, en petites étiquettes. */
+export function itemTags(item: WeaponItem): HTMLElement[] {
+  const affix = item.affix ? AFFIXES_BY_ID[item.affix] : undefined;
+  return [
+    affix && h('span', { class: 'tag tag-affix', title: `Préfixe : ${affix.desc}` }, `✦ ${affix.desc}`),
+    !!item.plus && h('span', { class: 'tag tag-plus', title: `Améliorée ${item.plus} fois à l'Atelier` }, `+${item.plus}`),
+  ].filter((t): t is HTMLElement => !!t);
+}
+
+/** Trait de personnalité d'un soldat, en étiquette. */
+export function traitTag(s: Soldier): HTMLElement | false {
+  const t = TRAITS_BY_ID[s.trait];
+  return !!t && h('span', { class: 'tag tag-trait', title: `${t.name} : ${t.desc}` }, `${t.icon} ${t.name}`);
 }
 
 export function xpBar(s: Soldier): HTMLElement {
@@ -161,7 +184,7 @@ export function soldierCard(st: GameState, s: Soldier, opts: CardOpts = {}): HTM
       'div',
       { class: 'card-body' },
       h('div', { class: nameClass }, s.favorite && h('span', { class: 'fav-star', title: 'Favori' }, '★ '), s.name),
-      h('div', { class: 'card-sub' }, h('span', { class: 'card-level' }, `Niv. ${s.level}`), h('span', { class: 'card-power', title: 'Puissance : résume les PV, les dégâts, la portée et les bonus' }, `⚡ ${fmt(powerScore(stats))}`)),
+      h('div', { class: 'card-sub' }, h('span', { class: 'card-level' }, `Niv. ${s.level}`), TRAITS_BY_ID[s.trait] && h('span', { class: 'card-trait', title: `${TRAITS_BY_ID[s.trait].name} : ${TRAITS_BY_ID[s.trait].desc}` }, TRAITS_BY_ID[s.trait].icon), h('span', { class: 'card-power', title: 'Puissance : résume les PV, les dégâts, la portée et les bonus' }, `⚡ ${fmt(powerScore(stats))}`)),
       xpBar(s),
       h('div', { class: 'card-pills' }, statusPills(s, weapon), costPill(opts)),
     ),
@@ -250,7 +273,7 @@ export function squadToolbar(st: GameState): HTMLElement {
     'select',
     { class: 'toolbar-select', title: 'Filtrer par rareté', onchange: (e) => { rarityFilter = (e.target as HTMLSelectElement).value as Rarity | 'all'; refresh(); } },
     h('option', { value: 'all' }, 'Toutes raretés'),
-    RARITY_ORDER.map((r) => h('option', { value: r }, `${RARITIES[r].label} (${st.soldiers.filter((s) => s.rarity === r).length})`)),
+    PULL_RARITIES.map((r) => h('option', { value: r }, `${RARITIES[r].label} (${st.soldiers.filter((s) => s.rarity === r).length})`)),
   );
   rarity.value = rarityFilter;
   const chip = (active: boolean, label: string, onclick: () => void, title?: string) => h('button', { class: `chip${active ? ' active' : ''}`, title, onclick }, label);

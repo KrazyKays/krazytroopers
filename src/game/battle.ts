@@ -1,5 +1,5 @@
 import { mulberry32, shuffle } from './rng';
-import type { CombatStats, PositionId, SpriteLook, Team } from './types';
+import type { CombatStats, PositionId, SpriteLook, Team, TraitId } from './types';
 
 export const ARENA_W = 800;
 export const ARENA_H = 400;
@@ -37,7 +37,36 @@ export interface BattleUnit {
   position?: PositionId;
   /** Porte un bouclier : tient la première ligne, sauf position contraire. */
   tank?: boolean;
+  /** Trait de personnalité d'un soldat (répliques en combat). */
+  trait?: TraitId;
+  /** Boss : insensible aux exécutions. */
+  boss?: boolean;
+  /** Vole : la mêlée ne l'atteint qu'une fois tous les ennemis au sol abattus. */
+  flying?: boolean;
+  /** Invisible et impossible à cibler jusqu'à sa première attaque. */
+  stealth?: boolean;
+  /** Porte-étendard : ses alliés proches infligent plus de dégâts et encaissent mieux. */
+  banner?: boolean;
+  /** Pose une mine à intervalle régulier ; elle explose au passage d'un adversaire. */
+  mines?: { every: number; dmg: number; r: number };
+  /** Poids de la mécanique spéciale dans le budget de menace d'une armée. */
+  threatMult?: number;
 }
+
+/** Rayon de l'aura d'un porte-étendard, et ses bonus. */
+export const BANNER_RADIUS = 110;
+export const BANNER_DMG = 1.2;
+export const BANNER_ARMOR = 10;
+/** Distance de déclenchement d'une mine, et nombre de mines actives par poseur. */
+const MINE_TRIGGER = 16;
+const MINE_MAX = 5;
+/** Rebond d'une arme à chaîne : portée et part des dégâts. */
+const CHAIN_RANGE = 100;
+const CHAIN_SHARE = 0.6;
+/** Largeur du couloir touché par un tir perforant. */
+const PIERCE_WIDTH = 18;
+/** Dégâts d'un attaquant de mêlée contre une cible volante. */
+const FLYING_MELEE = 0.5;
 
 export type BattleEvent =
   | { t: 'hit'; a: number; b: number; dmg: number; crit: boolean; ranged: boolean; splash: boolean }
@@ -45,7 +74,14 @@ export type BattleEvent =
   | { t: 'miss'; a: number; b: number; ranged: boolean }
   | { t: 'blast'; a: number; b: number; r: number }
   | { t: 'die'; i: number }
-  | { t: 'save'; i: number };
+  | { t: 'save'; i: number }
+  /** Un camoufleur se dévoile en attaquant. */
+  | { t: 'reveal'; i: number }
+  /** Arc électrique (rebond) ou rayon perforant, de l'unité a vers l'unité b. */
+  | { t: 'zap'; a: number; b: number }
+  | { t: 'mine'; x: number; y: number }
+  | { t: 'boom'; x: number; y: number; r: number }
+  | { t: 'execute'; i: number };
 
 export interface Frame {
   /** x, y, hp pour chaque unité, à plat. */
@@ -100,6 +136,13 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
   const totalTaken = new Float64Array(n);
   const totalHealed = new Float64Array(n);
   const totalHealGiven = new Float64Array(n);
+  const hidden = units.map((u) => !!u.stealth);
+  const mineCd = units.map((u) => u.mines?.every ?? 0);
+  const mines: { x: number; y: number; team: Team; owner: number; dmg: number; r: number }[] = [];
+  const banners = units.map((u, i) => (u.banner ? i : -1)).filter((i) => i >= 0);
+  const aura = new Array<boolean>(n).fill(false);
+  // Unités au sol encore ciblables, par camp : la mêlée ne vise les volants qu'une fois le sol nettoyé
+  const ground: Record<Team, number> = { ally: 0, enemy: 0 };
 
   for (const team of ['ally', 'enemy'] as Team[]) {
     const idx = units.map((u, i) => (u.team === team ? i : -1)).filter((i) => i >= 0);
@@ -127,11 +170,15 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
   let ticks = 0;
 
   const alive = (i: number) => hp[i] > 0;
+  const targetable = (i: number, j: number): boolean => {
+    if (units[j].team === units[i].team || !alive(j) || hidden[j]) return false;
+    return !units[j].flying || units[i].stats.ranged || ground[units[j].team] === 0;
+  };
   const nearestEnemy = (i: number): number => {
     let best = -1;
     let bestD = Infinity;
     for (let j = 0; j < n; j++) {
-      if (units[j].team === units[i].team || !alive(j)) continue;
+      if (!targetable(i, j)) continue;
       const d = (x[j] - x[i]) ** 2 + (y[j] - y[i]) ** 2;
       if (d < bestD) {
         bestD = d;
@@ -146,7 +193,7 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
     let best = -1;
     let bestRatio = Infinity;
     for (let j = 0; j < n; j++) {
-      if (units[j].team === units[i].team || !alive(j)) continue;
+      if (!targetable(i, j)) continue;
       if ((x[j] - x[i]) ** 2 + (y[j] - y[i]) ** 2 > range2) continue;
       const ratio = hp[j] / units[j].stats.maxHp;
       if (ratio < bestRatio) {
@@ -202,6 +249,21 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
     ticks = tick;
     const events: BattleEvent[] = [];
     shuffle(rng, order);
+    ground.ally = 0;
+    ground.enemy = 0;
+    for (let i = 0; i < n; i++) if (alive(i) && !hidden[i] && !units[i].flying) ground[units[i].team]++;
+    if (banners.length > 0) {
+      for (let i = 0; i < n; i++) {
+        aura[i] = false;
+        if (!alive(i)) continue;
+        for (const b of banners) {
+          if (alive(b) && units[b].team === units[i].team && (x[b] - x[i]) ** 2 + (y[b] - y[i]) ** 2 <= BANNER_RADIUS ** 2) {
+            aura[i] = true;
+            break;
+          }
+        }
+      }
+    }
 
     const heal = (target: number, amount: number): void => {
       const before = hp[target];
@@ -209,9 +271,9 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
       totalHealed[target] += hp[target] - before;
     };
 
-    const hurt = (target: number, dmg: number, source: number): number => {
+    const hurt = (target: number, dmg: number, source: number, reflect = true): number => {
       const T = units[target].stats;
-      const real = (dmg * 100) / (100 + T.armor);
+      const real = (dmg * 100) / (100 + T.armor + (aura[target] ? BANNER_ARMOR : 0));
       if (units[target].dummy) {
         totalDealt[source] += real;
         totalTaken[target] += real;
@@ -230,8 +292,49 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
           events.push({ t: 'die', i: target });
         }
       }
+      // Épines : une part des dégâts subis revient à l'attaquant, sans rebondir à nouveau
+      if (reflect && T.thorns && source !== target && alive(source) && units[source].team !== units[target].team) hurt(source, real * T.thorns, target, false);
       return real;
     };
+
+    const execute = (target: number, source: number): void => {
+      const limit = units[source].stats.execute ?? 0;
+      if (!limit || !alive(target) || units[target].boss || units[target].dummy || hp[target] > units[target].stats.maxHp * limit) return;
+      totalDealt[source] += hp[target];
+      totalTaken[target] += hp[target];
+      hp[target] = 0;
+      killCount[source]++;
+      events.push({ t: 'execute', i: target }, { t: 'die', i: target });
+    };
+
+    // Mines : posées à intervalle régulier, elles explosent au passage d'un adversaire
+    for (let i = 0; i < n; i++) {
+      const M = units[i].mines;
+      if (!M || !alive(i)) continue;
+      mineCd[i] -= DT;
+      if (mineCd[i] <= 0 && mines.filter((m) => m.owner === i).length < MINE_MAX) {
+        mineCd[i] = M.every;
+        mines.push({ x: x[i], y: y[i], team: units[i].team, owner: i, dmg: units[i].stats.damage * M.dmg, r: M.r });
+        events.push({ t: 'mine', x: r1(x[i]), y: r1(y[i]) });
+      }
+    }
+    for (let k = mines.length - 1; k >= 0; k--) {
+      const m = mines[k];
+      let trigger = false;
+      for (let j = 0; j < n && !trigger; j++) {
+        if (units[j].team !== m.team && alive(j) && !units[j].flying && (x[j] - m.x) ** 2 + (y[j] - m.y) ** 2 <= MINE_TRIGGER ** 2) trigger = true;
+      }
+      if (!trigger) continue;
+      mines.splice(k, 1);
+      events.push({ t: 'boom', x: r1(m.x), y: r1(m.y), r: m.r });
+      for (let j = 0; j < n; j++) {
+        if (units[j].team === m.team || !alive(j) || units[j].flying) continue;
+        if ((x[j] - m.x) ** 2 + (y[j] - m.y) ** 2 <= m.r ** 2) {
+          const dealt = hurt(j, m.dmg, m.owner);
+          events.push({ t: 'hit', a: m.owner, b: j, dmg: Math.round(dealt), crit: false, ranged: false, splash: true });
+        }
+      }
+    }
 
     const limit = hasCover ? coverLimit() : Infinity;
     const advance = (i: number, dx: number, dy: number, d: number): void => {
@@ -284,6 +387,10 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
         if (units[i].position === 'front' && d > stopDistance(i)) advance(i, dx, dy, d);
         if (cd[i] > 0) continue;
         cd[i] = Math.max(cd[i], -DT) + S.cooldown;
+        if (hidden[i]) {
+          hidden[i] = false;
+          events.push({ t: 'reveal', i });
+        }
         const T = units[t].stats;
         if (rng() < T.dodge) {
           events.push({ t: 'miss', a: i, b: t, ranged: S.ranged });
@@ -292,16 +399,62 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
         const growth = units[i].dummy?.growth ?? units[i].growth ?? 0;
         let dmg = (S.damage + growth * tick * DT) * (0.9 + rng() * 0.2);
         if (S.berserk && hp[i] < S.maxHp * 0.5) dmg *= 1.4;
+        if (aura[i]) dmg *= BANNER_DMG;
         const crit = rng() < S.crit;
         if (crit) dmg *= 2;
-        const dealt = hurt(t, dmg, i);
+        const dealt = hurt(t, units[t].flying && !S.ranged ? dmg * FLYING_MELEE : dmg, i);
         events.push({ t: 'hit', a: i, b: t, dmg: Math.round(dealt), crit, ranged: S.ranged, splash: false });
         if (S.lifesteal > 0) heal(i, dealt * S.lifesteal);
+        if (S.execute) execute(t, i);
+        if (S.chain) {
+          // Rebonds : de cible en cible, vers l'ennemi ciblable le plus proche pas encore touché
+          const struck = new Set([t]);
+          let from = t;
+          for (let c = 0; c < S.chain; c++) {
+            let next = -1;
+            let bestD = CHAIN_RANGE ** 2;
+            for (let j = 0; j < n; j++) {
+              if (struck.has(j) || !targetable(i, j)) continue;
+              const d2 = (x[j] - x[from]) ** 2 + (y[j] - y[from]) ** 2;
+              if (d2 < bestD) {
+                bestD = d2;
+                next = j;
+              }
+            }
+            if (next < 0) break;
+            struck.add(next);
+            events.push({ t: 'zap', a: from, b: next });
+            const bounce = hurt(next, dmg * CHAIN_SHARE, i);
+            events.push({ t: 'hit', a: i, b: next, dmg: Math.round(bounce), crit: false, ranged: false, splash: true });
+            from = next;
+          }
+        }
+        if (S.pierce) {
+          // Perforant : tous les ennemis dans le couloir du tir, jusqu'au bout de la portée
+          const ux = dx / d;
+          const uy = dy / d;
+          let far = t;
+          let farAlong = d;
+          for (let j = 0; j < n; j++) {
+            if (j === t || units[j].team === units[i].team || !alive(j) || hidden[j]) continue;
+            const along = (x[j] - x[i]) * ux + (y[j] - y[i]) * uy;
+            if (along <= 0 || along > S.range) continue;
+            const across = Math.abs((x[j] - x[i]) * uy - (y[j] - y[i]) * ux);
+            if (across > PIERCE_WIDTH) continue;
+            const through = hurt(j, dmg, i);
+            events.push({ t: 'hit', a: i, b: j, dmg: Math.round(through), crit: false, ranged: false, splash: true });
+            if (along > farAlong) {
+              farAlong = along;
+              far = j;
+            }
+          }
+          if (far !== t) events.push({ t: 'zap', a: i, b: far });
+        }
         if (S.aoe > 0) {
           events.push({ t: 'blast', a: i, b: t, r: S.aoe });
           for (let j = 0; j < n; j++) {
             if (j === t || units[j].team === units[i].team || !alive(j)) continue;
-            if (Math.hypot(x[j] - x[t], y[j] - y[t]) <= S.aoe) {
+            if (Math.hypot(x[j] - x[t], y[j] - y[t]) <= S.aoe && !units[j].flying) {
               const splash = hurt(j, dmg * 0.6, i);
               events.push({ t: 'hit', a: i, b: j, dmg: Math.round(splash), crit: false, ranged: false, splash: true });
             }

@@ -3722,3 +3722,491 @@ input[type='checkbox'] {
 .result-actions + .fold {
   margin-top: 0.75rem;
 }
+
+/* ==========================================================================
+   Fin de partie et personnalité : mythiques, préfixes, traits, bulles, biomes,
+   carte de campagne, Tour sans fin, bonus de survie
+   ========================================================================== */
+
+.rarity-mythic { --rc: #e0245e; }
+
+.card.rarity-mythic,
+.weapon-card.rarity-mythic {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--rc) 12%, var(--surface)), var(--surface) 45%, color-mix(in srgb, #7a3cff 8%, var(--surface)));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--rc) 35%, transparent), var(--shadow);
+}
+
+.rarity-mythic .gacha-back {
+  box-shadow: 0 0 34px var(--rc), 0 0 60px color-mix(in srgb, #7a3cff 50%, transparent);
+}
+
+.flipped.rarity-mythic .gacha-rays {
+  opacity: 1;
+  transition: opacity 0.4s 0.3s;
+  animation: spin 4s linear infinite;
+}
+
+.flipped.rarity-mythic .gacha-shine::before {
+  animation: shine 1.2s 0.45s ease-in-out infinite;
+}
+
+.flipped.rarity-mythic .gacha-front > .card,
+.flipped.rarity-mythic .gacha-front > .weapon-card {
+  box-shadow: 0 0 36px var(--rc);
+}
+
+.gacha-subtitle {
+  margin: 0.2rem 1rem 0;
+  padding: 0.3rem 0.9rem;
+  font-weight: 700;
+  color: #fff;
+  text-align: center;
+  background: color-mix(in srgb, var(--best, #8b3fd9) 55%, rgba(0, 0, 0, 0.4));
+  border-radius: 999px;
+}
+
+.first-pull {
+  margin: 0 0 0.3rem;
+  font-weight: 700;
+}
+
+/* ---------- Préfixes, améliorations, traits ---------- */
+
+.weapon-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.tag-affix {
+  color: #5a2a8a;
+  background: #f1e8fb;
+  border-color: color-mix(in srgb, #8b3fd9 30%, transparent);
+}
+
+.tag-plus {
+  font-weight: 800;
+  color: #7a4a00;
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.tag-trait {
+  color: var(--text);
+  background: var(--surface-3);
+}
+
+.card-trait {
+  margin-left: 0.3rem;
+  font-size: 0.9rem;
+  cursor: help;
+}
+
+.detail-trait {
+  margin-top: 0.25rem;
+}
+
+/* ---------- Combat : bulles, unités spéciales, rayons, mines ---------- */
+
+.bubble {
+  position: absolute;
+  bottom: calc(100% + 0.4cqw);
+  left: 50%;
+  z-index: 1001;
+  max-width: 18cqw;
+  padding: 0.35cqw 0.7cqw;
+  font-size: 1.15cqw;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #22271f;
+  text-align: center;
+  white-space: normal;
+  width: max-content;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  border-radius: 0.8cqw;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  transform: translateX(-50%);
+  animation: bubble-in 1.7s ease-out forwards;
+}
+
+.bubble::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  border: 0.5cqw solid transparent;
+  border-top-color: #fff;
+  transform: translateX(-50%);
+}
+
+.bubble-enemy {
+  color: #fff;
+  background: #8a2a2a;
+  border-color: #5a1515;
+}
+
+.bubble-enemy::after {
+  border-top-color: #8a2a2a;
+}
+
+/* le sprite est retourné selon le sens de marche : la bulle, elle, reste lisible */
+.unit .bubble {
+  min-width: 6cqw;
+}
+
+@keyframes bubble-in {
+  0% { opacity: 0; translate: 0 0.6cqw; }
+  10% { opacity: 1; translate: 0 0; }
+  85% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.unit.flying .unit-sprite {
+  animation: hover-bob 0.9s ease-in-out infinite alternate;
+}
+
+.unit.flying::after {
+  content: '';
+  position: absolute;
+  bottom: -1.4cqw;
+  left: 15%;
+  width: 70%;
+  height: 0.7cqw;
+  background: rgba(0, 0, 0, 0.22);
+  border-radius: 50%;
+}
+
+.unit.flying .sprite {
+  filter: drop-shadow(0 0 2px #9fe8ff) grayscale(0.4);
+}
+
+@keyframes hover-bob {
+  from { translate: 0 -1.6cqw; }
+  to { translate: 0 -2.4cqw; }
+}
+
+.unit.stealthed {
+  opacity: 0.18;
+  filter: blur(0.5px);
+}
+
+.unit.stealthed .hpbar {
+  visibility: hidden;
+}
+
+.unit.banner::before {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: calc(110 / 800 * 200cqw);
+  aspect-ratio: 1;
+  border: 1px dashed rgba(224, 176, 58, 0.8);
+  border-radius: 50%;
+  background: radial-gradient(ellipse, rgba(224, 176, 58, 0.18), transparent 70%);
+  transform: translate(-50%, 50%);
+  pointer-events: none;
+}
+
+.unit.banner .sprite {
+  filter: drop-shadow(0 0 3px #e0b03a) drop-shadow(0 2px 0 rgba(0, 0, 0, 0.25));
+}
+
+.unit.dead::before,
+.unit.dead::after {
+  display: none;
+}
+
+.zap {
+  position: absolute;
+  height: 0.35cqw;
+  min-height: 2px;
+  background: linear-gradient(90deg, #fff, #b48cff, #fff);
+  border-radius: 2px;
+  box-shadow: 0 0 6px #b48cff;
+  transform-origin: 0 50%;
+  pointer-events: none;
+  animation: zap-fade 220ms ease-out forwards;
+}
+
+@keyframes zap-fade {
+  to { opacity: 0; }
+}
+
+.mine {
+  position: absolute;
+  width: 1.3cqw;
+  aspect-ratio: 1;
+  background: radial-gradient(circle, #ff4a3a 0 25%, #3a3a2a 30% 70%, #6a6a4a 72%);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  animation: mine-blink 0.8s steps(2) infinite;
+}
+
+@keyframes mine-blink {
+  50% { filter: brightness(1.6); }
+}
+
+/* ---------- Décors de combat (biomes) ---------- */
+
+.arena.biome-desert {
+  border-color: #d8b77a;
+  background:
+    radial-gradient(ellipse at 70% 20%, rgba(255, 255, 255, 0.35), transparent 50%),
+    repeating-linear-gradient(170deg, rgba(255, 255, 255, 0.07) 0 40px, transparent 40px 90px),
+    linear-gradient(#f0d49a, #d9b26a);
+}
+
+.arena.biome-tundra {
+  border-color: #b8cfe0;
+  background:
+    radial-gradient(ellipse at 30% 30%, rgba(255, 255, 255, 0.6), transparent 55%),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 60px, transparent 60px 120px),
+    linear-gradient(#eef5fb, #c9dceb);
+}
+
+.arena.biome-city {
+  border-color: #8a8f96;
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.06) 0 2px, transparent 2px 80px),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.05) 0 2px, transparent 2px 60px),
+    linear-gradient(#b9bcc0, #8f9499);
+}
+
+.arena.biome-volcano {
+  border-color: #7a3a2a;
+  background:
+    radial-gradient(ellipse at 80% 90%, rgba(255, 110, 30, 0.45), transparent 45%),
+    radial-gradient(ellipse at 15% 80%, rgba(255, 80, 20, 0.3), transparent 40%),
+    linear-gradient(#6a4a42, #3e2a26);
+}
+
+.arena.biome-fortress {
+  border-color: #5a4a6a;
+  background:
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.05) 0 48px, rgba(0, 0, 0, 0.06) 48px 50px),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.04) 0 24px, rgba(0, 0, 0, 0.06) 24px 26px),
+    linear-gradient(#8a8396, #5e5869);
+}
+
+/* ---------- Carte de campagne ---------- */
+
+.campaign-map {
+  --map-a: #e9f3dc;
+  --map-b: #cfe5b4;
+  --map-ink: #2e5a22;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  color: var(--map-ink);
+  background:
+    radial-gradient(circle at 12% 20%, rgba(255, 255, 255, 0.6), transparent 35%),
+    linear-gradient(135deg, var(--map-a), var(--map-b));
+  border: 1px solid color-mix(in srgb, var(--map-ink) 25%, transparent);
+  border-radius: var(--radius);
+}
+
+.campaign-map.biome-desert { --map-a: #fbf0d6; --map-b: #efd49a; --map-ink: #7a5214; }
+.campaign-map.biome-tundra { --map-a: #f4f9fd; --map-b: #d3e4f1; --map-ink: #2a4a66; }
+.campaign-map.biome-city { --map-a: #eceef0; --map-b: #c8ccd1; --map-ink: #33383f; }
+.campaign-map.biome-volcano { --map-a: #f7ddd2; --map-b: #e8a98f; --map-ink: #6a2414; }
+.campaign-map.biome-fortress { --map-a: #ebe7f1; --map-b: #cdc5da; --map-ink: #3e3352; }
+
+.map-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.map-title {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  text-align: center;
+}
+
+.map-title small {
+  color: color-mix(in srgb, var(--map-ink) 75%, transparent);
+}
+
+.map-path {
+  position: relative;
+  display: grid;
+  grid-template-rows: auto auto;
+  gap: 0.9rem 0.6rem;
+  padding: 0.4rem 0.2rem;
+}
+
+/* chemin en pointillés derrière les étapes du lacet */
+.map-path::before {
+  content: '';
+  position: absolute;
+  inset: 22% 8%;
+  border: 3px dashed color-mix(in srgb, var(--map-ink) 30%, transparent);
+  border-left: 0;
+  border-radius: 0 40px 40px 0;
+  pointer-events: none;
+}
+
+.map-path .track-node {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+}
+
+.map-path .track-cleared {
+  background: color-mix(in srgb, var(--good-soft) 90%, transparent);
+}
+
+.map-path .track-next {
+  background: var(--primary);
+  animation: node-pulse 1.6s ease-in-out infinite;
+}
+
+.map-path .track-boss {
+  border-width: 2px;
+  border-color: color-mix(in srgb, var(--bad) 55%, var(--line));
+}
+
+@keyframes node-pulse {
+  50% { box-shadow: 0 0 0 5px color-mix(in srgb, var(--primary) 25%, transparent); }
+}
+
+.map-progress {
+  text-align: center;
+  font-weight: 600;
+}
+
+/* ---------- Tour sans fin et survie ---------- */
+
+.curse-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.curse-chip {
+  padding: 0.25rem 0.6rem;
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: #4a2a5a;
+  background: #f1e8fb;
+  border: 1px solid color-mix(in srgb, #8b3fd9 25%, transparent);
+  border-radius: var(--radius-sm);
+}
+
+.boon-picker,
+.result-picks {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+  padding: 0.7rem;
+  text-align: left;
+  background: var(--accent-soft);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-radius: var(--radius);
+}
+
+.boon-picker h3,
+.result-picks h3 {
+  font-size: 1rem;
+}
+
+.boon-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+}
+
+.boon,
+.pick-choice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  padding: 0.55rem 0.7rem;
+  text-align: left;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+}
+
+.boon:hover,
+.pick-choice:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent);
+  box-shadow: var(--shadow);
+}
+
+.boon-icon {
+  font-size: 1.4rem;
+}
+
+.boon small,
+.pick-choice small {
+  color: var(--muted);
+}
+
+.pick-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.pick-choices {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.4rem;
+}
+
+.pick-choice.best {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent);
+}
+
+.pick-choice .tag {
+  margin-left: 0.35rem;
+}
+
+@media (max-width: 760px) {
+  .map-path {
+    gap: 0.6rem 0.3rem;
+  }
+
+  .map-path .track-node {
+    padding: 0.3rem 0.1rem;
+  }
+
+  .bubble {
+    max-width: 30cqw;
+    font-size: 2cqw;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unit.flying .unit-sprite,
+  .map-path .track-next,
+  .mine {
+    animation: none;
+  }
+}
+
+/* L'Atelier prend toute une ligne sous « Équiper » et « Vendre » */
+.weapon-actions {
+  flex-wrap: wrap;
+}
+
+.weapon-actions .btn-gold,
+.weapon-actions > .tag-plus {
+  flex: 1 0 100%;
+  order: 2;
+  text-align: center;
+}

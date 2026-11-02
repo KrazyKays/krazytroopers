@@ -77,6 +77,7 @@ const CHIMES: Record<Rarity, number[]> = {
   rare: [440, 659],
   epic: [523, 659, 784],
   legendary: [523, 659, 784, 1047, 1319],
+  mythic: [392, 523, 659, 784, 1047, 1319, 1568],
 };
 
 export const sfx = {
@@ -94,7 +95,8 @@ export const sfx = {
     tone(220, 0, 0.7, { type: 'sawtooth', gain: 0.04, slide: 880 });
   },
   reveal(rarity: Rarity): void {
-    CHIMES[rarity].forEach((f, i) => tone(f, i * 0.07, rarity === 'legendary' ? 0.9 : 0.45, { type: 'triangle', gain: 0.09 }));
-    if (rarity === 'legendary') noise(0, 0.8, 0.12);
+    const grand = rarity === 'legendary' || rarity === 'mythic';
+    CHIMES[rarity].forEach((f, i) => tone(f, i * 0.07, grand ? 0.9 : 0.45, { type: 'triangle', gain: 0.09 }));
+    if (grand) noise(0, 0.8, 0.12);
   },
 };

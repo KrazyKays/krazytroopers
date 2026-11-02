@@ -1,5 +1,6 @@
-import { LEGEND_UPGRADES, LEGION_PICKS, MAX_LEVEL, PICK_LEVELS, RARITIES, RARITY_ORDER, TRAINING_PER_SOLDIER, UPGRADE_KINDS, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
+import { LEGEND_UPGRADES, LEGION_PICKS, MAX_LEVEL, PICK_LEVELS, PULL_RARITIES, RARITIES, RARITY_ORDER, TRAINING_PER_SOLDIER, UPGRADE_KINDS, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
 import { isUnlocked } from '../game/progress';
+import { TRAITS_BY_ID } from '../game/traits';
 import { barracksCap, equipWeapon, NAME_MAX_LENGTH, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite, trainingCost } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
 import { computeStats, dps, powerScore, weaponForSoldier } from '../game/stats';
@@ -22,10 +23,10 @@ import {
 import type { GameState, Rarity, Soldier, WeaponDef } from '../game/types';
 import { h } from './dom';
 import { goTo } from './nav';
-import { confirmDialog, familyTag, fmt, fold, getSquadSort, openModal, positionPicker, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
+import { confirmDialog, familyTag, fmt, fold, getSquadSort, itemDef, itemTags, openModal, traitTag, positionPicker, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
 
 
-const RARITY_PLURAL: Record<Rarity, string> = { common: 'communs', rare: 'rares', epic: 'épiques', legendary: 'légendaires' };
+const RARITY_PLURAL: Record<Rarity, string> = { common: 'communs', rare: 'rares', epic: 'épiques', legendary: 'légendaires', mythic: 'mythiques' };
 
 // Sélection multiple pour renvoyer des soldats (le renvoi rapporte de l'or)
 const selected = new Set<string>();
@@ -125,7 +126,7 @@ export function renderRoster(): HTMLElement {
           'div',
           { class: 'row' },
           h('span', { class: 'muted small' }, 'Ajouter tous les :'),
-          RARITY_ORDER.map((r) => {
+          PULL_RARITIES.map((r) => {
             const list = releasableByRarity(st, r);
             return h(
               'button',
@@ -264,6 +265,7 @@ export function openSoldier(id: string): void {
         null,
         h('h2', { class: 'detail-name' }, s.name),
         h('div', null, rarityTag(s.rarity), ` · Niveau ${s.level}${s.level >= MAX_LEVEL ? ' (max)' : ''}`, titleTags(s)),
+        h('div', { class: 'detail-trait' }, traitTag(s), TRAITS_BY_ID[s.trait] && h('small', { class: 'muted' }, ` ${TRAITS_BY_ID[s.trait].desc}`)),
         xpBar(s),
       ),
     );
@@ -304,7 +306,7 @@ export function openSoldier(id: string): void {
       [...st.weapons]
         .sort((a, b) => RARITY_ORDER.indexOf(WEAPONS_BY_ID[b.defId].rarity) - RARITY_ORDER.indexOf(WEAPONS_BY_ID[a.defId].rarity))
         .map((w) => {
-          const def = WEAPONS_BY_ID[w.defId];
+          const def = itemDef(w);
           const owner = owners.get(w.uid);
           return h(
             'button',
@@ -317,7 +319,7 @@ export function openSoldier(id: string): void {
             h(
               'span',
               null,
-              h('b', { style: `color:${RARITIES[def.rarity].color}` }, def.name, ' ', familyTag(def)),
+              h('b', { style: `color:${RARITIES[def.rarity].color}` }, def.name, ' ', familyTag(def), ...itemTags(w)),
               s.weaponUid === w.uid ? h('small', null, 'Équipée') : weaponDelta(s, weapon, def),
               owner && owner.id !== s.id && h('small', { class: 'muted owner' }, `Équipée par ${owner.name} (échange)`),
             ),

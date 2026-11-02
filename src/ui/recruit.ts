@@ -1,10 +1,10 @@
-import { PITY_LIMIT, PULL10_COST, PULL_COST, RARITIES, RARITY_ORDER, WEAPON_PULL10_COST, WEAPON_PULL_COST, WEAPONS_BY_ID } from '../game/data';
+import { PITY_LIMIT, PULL10_COST, PULL_COST, PULL_RARITIES, RARITIES, WEAPON_PULL10_COST, WEAPON_PULL_COST } from '../game/data';
 import { isUnlocked, unlockLevel } from '../game/progress';
-import { barracksCap, buyWeapons, nextBarracks, recruit } from '../game/roster';
+import { barracksCap, buyWeapons, FIRST_PULL_RARITY, nextBarracks, recruit } from '../game/roster';
 import { getState, mutate } from '../game/state';
-import type { WeaponDef } from '../game/types';
+import type { WeaponDef, WeaponItem } from '../game/types';
 import { h } from './dom';
-import { familyTag, fmt, fold, soldierCard, toast, weaponIcon, weaponTraits } from './components';
+import { familyTag, fmt, fold, itemDef, itemTags, soldierCard, toast, weaponIcon, weaponTraits } from './components';
 import { playGacha } from './gacha';
 import { goTo } from './nav';
 import { openSoldier } from './roster';
@@ -20,6 +20,7 @@ function againButton(close: () => void, label: string, can: boolean, run: () => 
 const hasRoom = (n: number): boolean => barracksCap(getState()) - getState().soldiers.length >= n;
 
 function doPull(mode: SoldierMode): void {
+  const firstEver = getState().totalPulls === 0;
   const result = mutate((st) => recruit(st, mode));
   if (!result.ok) {
     toast(result.error, 'bad');
@@ -29,7 +30,8 @@ function doPull(mode: SoldierMode): void {
   const soldiers = result.soldiers;
   playGacha({
     kind: 'soldier',
-    title: soldiers.length > 1 ? 'Nouvelles recrues' : 'Nouvelle recrue',
+    title: firstEver ? 'Votre toute première recrue !' : soldiers.length > 1 ? 'Nouvelles recrues' : 'Nouvelle recrue',
+    subtitle: firstEver ? `Cadeau de l'état-major : une recrue ${RARITIES[FIRST_PULL_RARITY].label} garantie pour démarrer.` : undefined,
     items: soldiers.map((s) => ({ rarity: s.rarity, front: soldierCard(st, s), onOpen: () => openSoldier(s.id) })),
     actions: (close) =>
       [
@@ -42,7 +44,7 @@ function doPull(mode: SoldierMode): void {
   });
 }
 
-export function weaponFront(def: WeaponDef, isNew: boolean): HTMLElement {
+export function weaponFront(def: WeaponDef, isNew: boolean, item?: WeaponItem): HTMLElement {
   const info = RARITIES[def.rarity];
   const traits = weaponTraits(def);
   return h(
@@ -52,6 +54,7 @@ export function weaponFront(def: WeaponDef, isNew: boolean): HTMLElement {
     h('b', { class: 'weapon-name', style: `color:${info.color}` }, def.name),
     h('div', { class: 'weapon-art' }, weaponIcon(def)),
     h('small', { class: 'rarity-tag', style: `color:${info.color}` }, info.label, ' ', familyTag(def)),
+    item && itemTags(item).length > 0 && h('div', { class: 'weapon-tags' }, itemTags(item)),
     h('small', { class: 'muted' }, `${def.heal ? 'Soins/s' : 'DPS'} ${fmt(def.damage / def.cooldown, 1)} · Portée ${fmt(def.range)}${def.armor ? ` · Armure +${def.armor}` : ''}`),
     traits.length > 0 && h('small', { class: 'weapon-traits' }, traits.join(' · ')),
   );
@@ -69,10 +72,10 @@ function doWeaponPull(mode: WeaponMode): void {
     kind: 'weapon',
     title: result.weapons.length > 1 ? 'Nouvelles armes' : 'Nouvelle arme',
     items: result.weapons.map((w) => {
-      const def = WEAPONS_BY_ID[w.defId];
+      const def = itemDef(w);
       const isNew = !known.has(def.id);
       known.add(def.id);
-      return { rarity: def.rarity, front: weaponFront(def, isNew), onOpen: () => goTo('arsenal') };
+      return { rarity: def.rarity, front: weaponFront(def, isNew, w), onOpen: () => goTo('arsenal') };
     }),
     actions: (close) =>
       [
@@ -111,7 +114,7 @@ function ratesBar(): HTMLElement {
   return h(
     'div',
     { class: 'rates-bar' },
-    RARITY_ORDER.map((r) =>
+    PULL_RARITIES.map((r) =>
       h('span', { class: 'rates-seg', style: `--rc:${RARITIES[r].color};flex:${RARITIES[r].rate}`, title: `${RARITIES[r].label} : ${RARITIES[r].rate} %` }, h('small', null, `${RARITIES[r].rate} %`)),
     ),
   );
@@ -160,6 +163,7 @@ export function renderRecruit(): HTMLElement {
         h(
           'div',
           { class: 'recruit-box' },
+          st.totalPulls === 0 && h('p', { class: 'note note-accent first-pull' }, `★ Premier tirage : recrue ${RARITIES[FIRST_PULL_RARITY].label} garantie !`),
           st.freePulls > 0 && h('button', { class: 'btn btn-big btn-gold btn-free', disabled: room <= 0, onclick: () => doPull('free') }, room <= 0 ? `Caserne pleine (${st.freePulls} tirage${st.freePulls > 1 ? 's' : ''} gratuit${st.freePulls > 1 ? 's' : ''} en réserve)` : `Tirage gratuit (${st.freePulls} restant${st.freePulls > 1 ? 's' : ''})`),
           pullButton(`Recruter ×1 — ${PULL_COST} or`, PULL_COST, st.gold, () => doPull('one'), undefined, fullMsg),
           pullButton(`Recruter ×10 — ${fmt(PULL10_COST)} or`, PULL10_COST, st.gold, () => doPull('ten'), `1 soldat offert (${fmt(PULL_COST * 10 - PULL10_COST)} or d'économie)`, !bulk ? bulkLock : room < 10 ? `Il faut 10 places libres (${Math.max(0, room)})` : undefined),

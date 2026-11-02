@@ -60,6 +60,9 @@ export function nextStep(st: GameState): Step | null {
   if (goals.length > 0) {
     return { icon: '🏆', title: 'Objectif atteint !', text: `« ${goals[0].label} » : votre récompense vous attend au QG${goals.length > 1 ? `, avec ${goals.length - 1} autre${goals.length > 2 ? 's' : ''}` : ''}.`, action: { label: 'Réclamer', run: () => goTo('home') }, tab: 'home' };
   }
+  if (st.survival?.choices) {
+    return { icon: '🎁', title: 'Bonus d’expédition à choisir', text: `Vague ${st.survival.wave} remportée : choisissez un bonus parmi trois avant de repartir.`, action: { label: 'Survie', run: () => openCombat('survival') }, tab: 'combat' };
+  }
   if (st.survival) {
     return { icon: '🔥', title: 'Expédition de survie en cours', text: `${st.survival.wave} vague${st.survival.wave > 1 ? 's' : ''} remportée${st.survival.wave > 1 ? 's' : ''}, ${fmt(st.survival.pot)} or dans le pot : continuez ou encaissez.`, action: { label: 'Survie', run: () => openCombat('survival') }, tab: 'combat' };
   }
@@ -86,6 +89,10 @@ export function nextStep(st: GameState): Step | null {
   const next = nextUnlock(st);
   if (next) {
     return { icon: '🚩', title: `Objectif : niveau ${next.level} de la campagne`, text: `Débloque « ${next.label} » : ${next.desc}`, action: { label: 'Campagne', run: () => openCombat('campaign') }, tab: 'combat' };
+  }
+  // Fin de partie : la Tour reste toujours un objectif à repousser
+  if (isUnlocked(st, 'tower')) {
+    return { icon: '🗼', title: `Tour sans fin : étage ${st.towerFloor + 1}`, text: `Record actuel : étage ${st.towerFloor}. Une arme légendaire tous les 10 étages, une mythique tous les 20.`, action: { label: 'Tour', run: () => openCombat('tower') }, tab: 'combat' };
   }
   return null;
 }

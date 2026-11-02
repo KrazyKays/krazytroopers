@@ -2,6 +2,7 @@ import { dailyDone } from '../game/combat';
 import { dailyKey, dailyModifier, previewCampaign } from '../game/enemies';
 import { claimableGoals, claimGoal, GOALS, openGoals, rewardLabel, type GoalDef } from '../game/goals';
 import { isUnlocked, nextUnlock } from '../game/progress';
+import { biomeFor } from '../game/biomes';
 import { sortSquad } from '../game/roster';
 import { getState, mutate } from '../game/state';
 import type { GameState } from '../game/types';
@@ -15,7 +16,7 @@ import { openSoldier } from './roster';
 function heroCard(st: GameState): HTMLElement {
   const step = nextStep(st);
   if (!step) {
-    return h('div', { class: 'hero' }, h('div', { class: 'hero-icon' }, '🎖️'), h('div', { class: 'hero-body' }, h('h2', null, 'Mission accomplie'), h('p', null, 'Toutes les fonctionnalités sont débloquées. Visez les 3 étoiles partout et les objectifs restants !')));
+    return h('div', { class: 'hero' }, h('div', { class: 'hero-icon' }, '🎖️'), h('div', { class: 'hero-body' }, h('h2', null, 'Mission accomplie'), h('p', null, `Toutes les fonctionnalités sont débloquées. Grimpez dans la Tour sans fin (record : étage ${st.towerFloor}), forgez des armes mythiques et poussez la campagne toujours plus loin !`)));
   }
   return h(
     'div',
@@ -48,7 +49,7 @@ function missions(st: GameState): HTMLElement {
     h(
       'button',
       { class: `mission-main${prev.boss ? ' boss' : ''}`, onclick: () => openCombat('campaign') },
-      h('span', { class: 'mission-eyebrow' }, prev.boss ? '☠ Boss' : '🚩 Campagne'),
+      h('span', { class: 'mission-eyebrow' }, prev.boss ? '☠ Boss' : '🚩 Campagne', ` · ${biomeFor(next).icon} ${biomeFor(next).name}`),
       h('b', { class: 'mission-title' }, `Niveau ${next}`),
       h('span', { class: 'muted' }, `${prev.count} ennemis${prev.elites.length > 0 ? `, dont ${prev.elites.length} élite${prev.elites.length > 1 ? 's' : ''}` : ''}`),
       h('span', { class: 'btn btn-primary btn-big mission-cta' }, 'Préparer le combat →'),
@@ -57,7 +58,8 @@ function missions(st: GameState): HTMLElement {
       'div',
       { class: 'quick-grid' },
       isUnlocked(st, 'daily') && modeCard({ icon: '📅', title: 'Défi du jour', mode: 'daily', tag: dailyDone(st) ? undefined : 'NOUVEAU', line: dailyDone(st) ? 'Revenez demain' : `« ${dailyModifier(dailyKey()).name} »` }),
-      isUnlocked(st, 'survival') && modeCard({ icon: '🔥', title: 'Survie', mode: 'survival', tag: st.survival ? 'EN COURS' : undefined, line: st.survival ? `Pot : ${fmt(st.survival.pot)} or` : `Record : vague ${st.bestWave}` }),
+      isUnlocked(st, 'survival') && modeCard({ icon: '🔥', title: 'Survie', mode: 'survival', tag: st.survival?.choices ? 'BONUS' : st.survival ? 'EN COURS' : undefined, line: st.survival ? `Pot : ${fmt(st.survival.pot)} or` : `Record : vague ${st.bestWave}` }),
+      isUnlocked(st, 'tower') && modeCard({ icon: '🗼', title: 'Tour sans fin', mode: 'tower', line: `Étage ${st.towerFloor + 1} · record ${st.towerFloor}` }),
       modeCard({ icon: '🎯', title: 'Entraînement', mode: 'training', line: free > 0 ? `${free} gratuit${free > 1 ? 's' : ''}` : 'Sans danger, pour l’XP' }),
       unlock && h('div', { class: 'quick-card next-unlock', title: unlock.desc }, h('span', { class: 'quick-icon' }, '🔓'), h('span', { class: 'quick-text' }, h('b', null, unlock.label), h('small', { class: 'muted' }, `Au niveau ${unlock.level} de la campagne`))),
     ),

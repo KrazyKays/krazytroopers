@@ -1,17 +1,18 @@
-import { FORGE_FEE, FORGE_INPUT, RARITIES, RARITY_ORDER, WEAPONS_BY_ID } from '../game/data';
-import { isUnlocked } from '../game/progress';
+import { FORGE_FEE, FORGE_INPUT, RARITIES, RARITY_ORDER, WEAPON_MAX_PLUS, WEAPON_PLUS_DMG, WEAPON_PLUS_MATERIAL, WEAPONS_BY_ID } from '../game/data';
+import { isUnlocked, unlockLevel } from '../game/progress';
+import { upgradeCost, upgradeMaterials, upgradeNeedsMaterial, upgradeWeapon, weaponSellValue } from '../game/weapons';
 import { equipWeapon, forgeableWeapons, forgeWeapons, sellWeapons, sortSquad } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
 import { weaponForSoldier } from '../game/stats';
 import type { GameState, Rarity, WeaponItem } from '../game/types';
 import { h } from './dom';
-import { confirmDialog, familyTag, fmt, fold, getSquadSort, openModal, rarityTag, soldierSprite, toast, undoable, weaponDelta, weaponIcon, weaponTraits } from './components';
+import { confirmDialog, familyTag, fmt, fold, getSquadSort, itemDef, itemTags, openModal, rarityTag, soldierSprite, toast, undoable, weaponDelta, weaponIcon, weaponTraits } from './components';
 import { playGacha } from './gacha';
 import { weaponFront } from './recruit';
 import { goTo } from './nav';
 import { openSoldier } from './roster';
 
-const RARITY_PLURAL: Record<Rarity, string> = { common: 'communes', rare: 'rares', epic: 'épiques', legendary: 'légendaires' };
+const RARITY_PLURAL: Record<Rarity, string> = { common: 'communes', rare: 'rares', epic: 'épiques', legendary: 'légendaires', mythic: 'mythiques' };
 
 const selected = new Set<string>();
 
@@ -27,19 +28,24 @@ function statItem(label: string, value: string): HTMLElement {
 }
 
 function weaponsValue(items: WeaponItem[]): number {
-  return items.reduce((sum, w) => sum + RARITIES[WEAPONS_BY_ID[w.defId].rarity].sellValue, 0);
+  return items.reduce((sum, w) => sum + weaponSellValue(w), 0);
 }
 
 async function sellItems(items: WeaponItem[]): Promise<void> {
   if (items.length === 0) return;
   const gold = weaponsValue(items);
   const counts = new Map<string, number>();
-  for (const w of items) counts.set(w.defId, (counts.get(w.defId) ?? 0) + 1);
+  const byName = new Map<string, WeaponItem>();
+  for (const w of items) {
+    const name = itemDef(w).name;
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+    byName.set(name, w);
+  }
   const ok = await confirmDialog({
     title: `Vendre ${items.length} arme${items.length > 1 ? 's' : ''} ?`,
     body: [
       h('p', null, `Vous recevrez ${fmt(gold)} or. Vous pourrez annuler juste après.`),
-      h('ul', { class: 'confirm-list' }, [...counts].map(([defId, n]) => h('li', { style: `color:${RARITIES[WEAPONS_BY_ID[defId].rarity].color}` }, `${WEAPONS_BY_ID[defId].name}${n > 1 ? ` ×${n}` : ''}`))),
+      h('ul', { class: 'confirm-list' }, [...counts].map(([name, n]) => h('li', { style: `color:${RARITIES[WEAPONS_BY_ID[byName.get(name)!.defId].rarity].color}` }, `${name}${n > 1 ? ` ×${n}` : ''}`))),
     ],
     confirm: `Vendre (+${fmt(gold)} or)`,
   });
@@ -60,7 +66,7 @@ function openEquip(uid: string): void {
       queueMicrotask(close);
       return h('div');
     }
-    const def = WEAPONS_BY_ID[item.defId];
+    const def = itemDef(item);
     // Les soldats sans arme d'abord : ce sont eux qui en ont le plus besoin
     const soldiers = sortSquad(st, getSquadSort()).sort((a, b) => Number(!!a.weaponUid) - Number(!!b.weaponUid));
     return h(
@@ -111,11 +117,11 @@ function forge(rarity: Rarity): void {
     return;
   }
   for (const uid of res.consumed) selected.delete(uid);
-  const def = WEAPONS_BY_ID[res.weapon.defId];
+  const def = itemDef(res.weapon);
   playGacha({
     kind: 'weapon',
-    title: 'Forge',
-    items: [{ rarity: def.rarity, front: weaponFront(def, !known.has(def.id)) }],
+    title: def.rarity === 'mythic' ? 'Forge mythique' : 'Forge',
+    items: [{ rarity: def.rarity, front: weaponFront(def, !known.has(def.id), res.weapon) }],
     actions: (close) => [h('button', { class: 'btn', onclick: close }, 'Continuer')],
   });
 }
@@ -124,7 +130,7 @@ function forge(rarity: Rarity): void {
 function forgePanel(st: GameState): HTMLElement | false {
   if (st.weapons.length === 0) return false;
   if (!isUnlocked(st, 'forge')) return false;
-  const rarities = RARITY_ORDER.filter((r): r is Exclude<Rarity, 'legendary'> => r !== 'legendary');
+  const rarities = RARITY_ORDER.filter((r): r is Exclude<Rarity, 'mythic'> => r !== 'mythic' && (r !== 'legendary' || isUnlocked(st, 'mythicforge')));
   const ready = rarities.filter((r) => forgeableWeapons(st, r).length >= FORGE_INPUT && st.gold >= FORGE_FEE[r]).length;
   return fold(`arsenal-forge`, `⚒️ Forge${ready > 0 ? ` : ${ready} fusion${ready > 1 ? 's' : ''} possible${ready > 1 ? 's' : ''}` : ''}`, h(
     'div',
@@ -149,6 +155,39 @@ function forgePanel(st: GameState): HTMLElement | false {
   ));
 }
 
+// Atelier : +1 à +10, payé en or, puis en sacrifiant une arme de même rareté à partir de +5
+function upgradeButton(st: GameState, w: WeaponItem): HTMLElement {
+  const plus = w.plus ?? 0;
+  if (plus >= WEAPON_MAX_PLUS) return h('span', { class: 'tag tag-plus' }, `Maximum +${WEAPON_MAX_PLUS}`);
+  const cost = upgradeCost(w);
+  const material = upgradeNeedsMaterial(w);
+  const materials = material ? upgradeMaterials(st, w).length : 1;
+  const reason = st.gold < cost ? `Il manque ${fmt(cost - st.gold)} or.` : materials === 0 ? `Il faut une autre arme ${RARITIES[WEAPONS_BY_ID[w.defId].rarity].label.toLowerCase()} non équipée et non améliorée.` : undefined;
+  return h(
+    'button',
+    {
+      class: 'btn btn-small btn-gold',
+      disabled: !!reason,
+      title: reason ?? `+${Math.round(WEAPON_PLUS_DMG * 100)} % dégâts${material ? ' · consomme une arme de même rareté' : ''}`,
+      onclick: () => {
+        const r = mutate((state) => upgradeWeapon(state, w.uid));
+        if (!r.ok) toast(r.error, 'bad');
+        else {
+          if (r.consumed) selected.delete(r.consumed);
+          toast(`Arme améliorée à +${r.plus} !`, 'good');
+        }
+      },
+    },
+    `⚒ +${plus + 1} · ${fmt(cost)} or${material ? ' + 1 arme' : ''}`,
+  );
+}
+
+function workshopNote(st: GameState): HTMLElement {
+  return isUnlocked(st, 'workshop')
+    ? h('p', { class: 'muted small' }, `⚒ Atelier : chaque cran ajoute +${Math.round(WEAPON_PLUS_DMG * 100)} % de dégâts (jusqu'à +${WEAPON_MAX_PLUS}). À partir de +${WEAPON_PLUS_MATERIAL}, une arme de même rareté, non équipée et non améliorée, est aussi consommée.`)
+    : h('p', { class: 'muted small' }, `🔒 L'Atelier (améliorations +1 à +${WEAPON_MAX_PLUS}) ouvre au niveau ${unlockLevel('workshop')} de la campagne.`);
+}
+
 export function renderArsenal(): HTMLElement {
   const st = getState();
   const owners = new Map(st.soldiers.filter((s) => s.weaponUid).map((s) => [s.weaponUid as string, s]));
@@ -159,8 +198,9 @@ export function renderArsenal(): HTMLElement {
   for (const uid of [...selected]) if (!sellableUids.has(uid)) selected.delete(uid);
 
   const sorted = [...st.weapons].sort(
-    (a, b) => RARITY_ORDER.indexOf(WEAPONS_BY_ID[b.defId].rarity) - RARITY_ORDER.indexOf(WEAPONS_BY_ID[a.defId].rarity) || a.defId.localeCompare(b.defId),
+    (a, b) => RARITY_ORDER.indexOf(WEAPONS_BY_ID[b.defId].rarity) - RARITY_ORDER.indexOf(WEAPONS_BY_ID[a.defId].rarity) || (b.plus ?? 0) - (a.plus ?? 0) || a.defId.localeCompare(b.defId),
   );
+  const workshop = isUnlocked(st, 'workshop');
   const selection = sellable.filter((w) => selected.has(w.uid));
 
   return h(
@@ -193,6 +233,7 @@ export function renderArsenal(): HTMLElement {
         ),
       ),
     forgePanel(st),
+    st.weapons.length > 0 && workshopNote(st),
     selected.size > 0 &&
       h(
         'div',
@@ -212,12 +253,13 @@ export function renderArsenal(): HTMLElement {
           'div',
           { class: 'weapon-grid' },
           sorted.map((w) => {
-            const def = WEAPONS_BY_ID[w.defId];
+            const def = itemDef(w);
             const info = RARITIES[def.rarity];
             const owner = owners.get(w.uid);
+            const value = weaponSellValue(w);
             return h(
               'div',
-              { class: 'weapon-card', style: `--rc:${info.color}` },
+              { class: `weapon-card rarity-${def.rarity}`, style: `--rc:${info.color}` },
               h(
                 'div',
                 { class: 'weapon-head' },
@@ -236,6 +278,7 @@ export function renderArsenal(): HTMLElement {
                 h('b', { class: 'weapon-name', style: `color:${info.color}` }, def.name),
                 familyTag(def),
               ),
+              itemTags(w).length > 0 && h('div', { class: 'weapon-tags' }, itemTags(w)),
               h('div', { class: 'weapon-art' }, weaponIcon(def)),
               h(
                 'div',
@@ -253,6 +296,7 @@ export function renderArsenal(): HTMLElement {
                 'div',
                 { class: 'weapon-actions' },
                 h('button', { class: 'btn btn-small', disabled: st.soldiers.length === 0, onclick: () => openEquip(w.uid) }, 'Équiper sur…'),
+                workshop && upgradeButton(st, w),
                 h(
                   'button',
                   {
@@ -266,7 +310,7 @@ export function renderArsenal(): HTMLElement {
                       );
                     },
                   },
-                  `Vendre ${info.sellValue} or`,
+                  `Vendre ${value} or`,
                 ),
               ),
             );

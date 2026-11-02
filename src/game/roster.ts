@@ -10,6 +10,7 @@ import {
   PITY_LIMIT,
   PULL10_COST,
   PULL_COST,
+  PULL_RARITIES,
   RARITIES,
   RARITY_ORDER,
   SKIN_TONES,
@@ -24,6 +25,8 @@ import { nextUid } from './state';
 import { computeStats, dps, weaponForSoldier } from './stats';
 import { pick, range, weightedPick, type Rng } from './rng';
 import { grantLevelPicks } from './upgrades';
+import { traitFor } from './traits';
+import { newWeaponItem, weaponSellValue } from './weapons';
 import type { GameState, Rarity, Soldier, WeaponDef, WeaponItem } from './types';
 
 export function rollRarity(rng: Rng, pity: number): Rarity {
@@ -33,7 +36,7 @@ export function rollRarity(rng: Rng, pity: number): Rarity {
       ['legendary', RARITIES.legendary.rate],
     ] as const);
   }
-  return weightedPick(rng, RARITY_ORDER.map((r) => [r, RARITIES[r].rate] as const));
+  return weightedPick(rng, PULL_RARITIES.map((r) => [r, RARITIES[r].rate] as const));
 }
 
 export function createSoldier(st: GameState, rarity: Rarity, rng: Rng): Soldier {
@@ -62,7 +65,9 @@ export function createSoldier(st: GameState, rarity: Rarity, rng: Rng): Soldier 
     favorite: false,
     legions: 0,
     position: 'free',
+    trait: 'stoic',
   };
+  s.trait = traitFor(s.id, s.name);
   grantLevelPicks(s, rng);
   return s;
 }
@@ -77,6 +82,9 @@ export function nextBarracks(st: GameState): { level: number; cap: number } | nu
   const next = BARRACKS.find(([level]) => level > st.campaignLevel);
   return next ? { level: next[0], cap: next[1] } : null;
 }
+
+/** Rareté garantie du tout premier tirage de la partie. */
+export const FIRST_PULL_RARITY: Rarity = 'epic';
 
 export type RecruitResult = { ok: true; soldiers: Soldier[]; free: boolean } | { ok: false; error: string };
 
@@ -96,7 +104,8 @@ export function recruit(st: GameState, mode: 'free' | 'one' | 'ten', rng: Rng = 
 
   const soldiers: Soldier[] = [];
   for (let i = 0; i < count; i++) {
-    const rarity = rollRarity(rng, st.pity);
+    // La toute première recrue est garantie Épique : de quoi s'attacher à son escouade dès la première minute
+    const rarity = st.totalPulls === 0 ? FIRST_PULL_RARITY : rollRarity(rng, st.pity);
     st.pity = rarity === 'epic' || rarity === 'legendary' ? 0 : st.pity + 1;
     st.totalPulls++;
     const s = createSoldier(st, rarity, rng);
@@ -119,7 +128,7 @@ export function buyWeapons(st: GameState, mode: 'one' | 'ten', rng: Rng = Math.r
   for (let i = 0; i < (mode === 'ten' ? 10 : 1); i++) {
     const rarity = rollRarity(rng, st.weaponPity);
     st.weaponPity = rarity === 'epic' || rarity === 'legendary' ? 0 : st.weaponPity + 1;
-    const item = { uid: nextUid(st, 'w'), defId: weaponOfRarity(rng, rarity).id };
+    const item = newWeaponItem(st, weaponOfRarity(rng, rarity), rng);
     st.weapons.push(item);
     weapons.push(item);
   }
@@ -139,10 +148,9 @@ export function equipWeapon(st: GameState, soldierId: string, weaponUid: string 
 export function sellWeapon(st: GameState, uid: string): number {
   const idx = st.weapons.findIndex((w) => w.uid === uid);
   if (idx < 0) return 0;
-  const def = WEAPONS.find((w) => w.id === st.weapons[idx].defId);
+  const value = weaponSellValue(st.weapons[idx]);
   for (const s of st.soldiers) if (s.weaponUid === uid) s.weaponUid = null;
   st.weapons.splice(idx, 1);
-  const value = def ? RARITIES[def.rarity].sellValue : 0;
   st.gold += value;
   return value;
 }
@@ -169,7 +177,8 @@ export type ForgeResult = { ok: true; weapon: WeaponItem; consumed: string[] } |
 // Le joueur peut choisir les armes à fondre ; à défaut, les doublons les plus nombreux partent en premier.
 export function forgeWeapons(st: GameState, rarity: Rarity, uids?: readonly string[], rng: Rng = Math.random): ForgeResult {
   if (!isUnlocked(st, 'forge')) return { ok: false, error: `La forge se débloque au niveau ${unlockLevel('forge')} de la campagne.` };
-  if (rarity === 'legendary') return { ok: false, error: 'Les armes légendaires ne peuvent pas être fusionnées.' };
+  if (rarity === 'mythic') return { ok: false, error: 'Les armes mythiques ne peuvent pas être fusionnées.' };
+  if (rarity === 'legendary' && !isUnlocked(st, 'mythicforge')) return { ok: false, error: `La forge mythique se débloque au niveau ${unlockLevel('mythicforge')} de la campagne.` };
   const pool = forgeableWeapons(st, rarity);
   const copies = new Map<string, number>();
   for (const w of pool) copies.set(w.defId, (copies.get(w.defId) ?? 0) + 1);
@@ -181,7 +190,7 @@ export function forgeWeapons(st: GameState, rarity: Rarity, uids?: readonly stri
   const consumed = chosen.map((w) => w.uid);
   st.weapons = st.weapons.filter((w) => !consumed.includes(w.uid));
   const next = RARITY_ORDER[RARITY_ORDER.indexOf(rarity) + 1];
-  const weapon = { uid: nextUid(st, 'w'), defId: weaponOfRarity(rng, next).id };
+  const weapon = newWeaponItem(st, weaponOfRarity(rng, next), rng);
   st.weapons.push(weapon);
   return { ok: true, weapon, consumed };
 }
@@ -260,10 +269,12 @@ export function rollWeaponDrop(level: number, boss: boolean, rng: Rng = Math.ran
     ['legendary', Math.min(12, Math.max(0, level - 14) * 1.5)],
   ];
   let rarity = weightedPick(rng, weights.filter(([, w]) => w > 0));
-  if (boss) rarity = RARITY_ORDER[Math.min(RARITY_ORDER.length - 1, RARITY_ORDER.indexOf(rarity) + 1)];
+  // Un boss améliore la rareté d'un cran, sans jamais atteindre Mythique : elle se forge ou se gagne dans la Tour
+  if (boss) rarity = PULL_RARITIES[Math.min(PULL_RARITIES.length - 1, PULL_RARITIES.indexOf(rarity) + 1)];
   return weaponOfRarity(rng, rarity);
 }
 
-function weaponOfRarity(rng: Rng, rarity: Rarity): WeaponDef {
-  return pick(rng, WEAPONS.filter((w) => w.droppable && w.rarity === rarity));
+/** Arme au hasard d'une rareté : parmi les armes tirables, ou les mythiques pour cette rareté. */
+export function weaponOfRarity(rng: Rng, rarity: Rarity): WeaponDef {
+  return pick(rng, WEAPONS.filter((w) => w.rarity === rarity && (w.droppable || rarity === 'mythic')));
 }

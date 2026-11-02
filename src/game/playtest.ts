@@ -10,6 +10,7 @@ import { TACTICS } from './squad';
 import { createInitialState } from './state';
 import { computeStats, powerScore, weaponForSoldier } from './stats';
 import { pickUpgrade, recommendedUpgrade } from './upgrades';
+import { pickBoon } from './survival';
 import type { GameState, Soldier, TacticId } from './types';
 
 // Bot de playtest : joue une partie entière avec les vraies règles du jeu, pour mesurer le rythme et l'économie.
@@ -191,7 +192,7 @@ function run(profile: Profile, seed: number, opts: PlayOptions): Playthrough {
     book,
     pulls: 0,
     freePullsEarned: 0,
-    weaponsFound: { common: 0, rare: 0, epic: 0, legendary: 0 },
+    weaponsFound: { common: 0, rare: 0, epic: 0, legendary: 0, mythic: 0 },
     firsts: {},
     modeCount: {},
     stuck: false,
@@ -422,6 +423,7 @@ function run(profile: Profile, seed: number, opts: PlayOptions): Playthrough {
     if (profile.sideModes && (isUnlocked(st, 'survival') || st.survival) && out.fights % 20 === 0) {
       let wave = 0;
       while (wave < 15) {
+        if (st.survival?.choices) pickBoon(st, st.survival.choices[0], rand);
         const req: BattleRequest = { mode: 'survival', squad: st.survival?.squad ?? squad };
         if (winRate(st, req, fightSeed + wave) < 0.8) break;
         const report = fight(req);

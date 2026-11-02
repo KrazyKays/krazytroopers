@@ -1,5 +1,7 @@
-import { EMPTY_MODS, MAX_LEVEL, RARITIES, UPGRADES_BY_ID, WEAPONS_BY_ID, FISTS } from './data';
-import type { CombatStats, Mods, Soldier, WeaponDef } from './types';
+import { EMPTY_MODS, MAX_LEVEL, RARITIES, UPGRADES_BY_ID, FISTS } from './data';
+import { TRAITS_BY_ID } from './traits';
+import { resolveWeapon } from './weapons';
+import type { CombatStats, Mods, Soldier, WeaponDef, WeaponItem } from './types';
 
 export const BASE_HP = 90;
 export const BASE_SPEED = 70;
@@ -15,23 +17,34 @@ export function xpForNext(level: number): number {
   return 70 + 30 * l + 4 * l * l;
 }
 
+function addMods(m: Mods, mods: Partial<Mods>): void {
+  for (const [k, v] of Object.entries(mods) as [keyof Mods, number | boolean][]) {
+    if (typeof v === 'boolean') (m[k] as boolean) = (m[k] as boolean) || v;
+    else (m[k] as number) += v;
+  }
+}
+
 export function aggregateMods(upgradeIds: readonly string[]): Mods {
   const m: Mods = { ...EMPTY_MODS };
   for (const id of upgradeIds) {
     const u = UPGRADES_BY_ID[id];
-    if (!u) continue;
-    for (const [k, v] of Object.entries(u.mods) as [keyof Mods, number | boolean][]) {
-      if (typeof v === 'boolean') (m[k] as boolean) = (m[k] as boolean) || v;
-      else (m[k] as number) += v;
-    }
+    if (u) addMods(m, u.mods);
   }
+  return m;
+}
+
+/** Améliorations et trait de personnalité d'un soldat, cumulés. */
+export function soldierMods(s: Soldier): Mods {
+  const m = aggregateMods(s.upgrades);
+  const trait = s.trait ? TRAITS_BY_ID[s.trait] : undefined;
+  if (trait) addMods(m, trait.mods);
   return m;
 }
 
 export function computeStats(s: Soldier, weapon: WeaponDef): CombatStats {
   const r = RARITIES[s.rarity].statMult;
   const lm = levelMult(s.level);
-  const m = aggregateMods(s.upgrades);
+  const m = soldierMods(s);
   return {
     maxHp: BASE_HP * r * s.hpRoll * lm * Math.max(0.3, 1 + m.hpPct),
     damage: weapon.damage * r * s.powerRoll * lm * (1 + m.dmgPct),
@@ -50,13 +63,17 @@ export function computeStats(s: Soldier, weapon: WeaponDef): CombatStats {
     berserk: m.berserk,
     secondWind: m.secondWind,
     heal: !!weapon.heal,
+    chain: weapon.chain,
+    pierce: weapon.pierce,
+    execute: weapon.execute,
+    thorns: weapon.thorns,
   };
 }
 
-export function weaponForSoldier(s: Soldier, weapons: readonly { uid: string; defId: string }[]): WeaponDef {
+export function weaponForSoldier(s: Soldier, weapons: readonly WeaponItem[]): WeaponDef {
   if (!s.weaponUid) return FISTS;
   const item = weapons.find((w) => w.uid === s.weaponUid);
-  return item ? (WEAPONS_BY_ID[item.defId] ?? FISTS) : FISTS;
+  return item ? resolveWeapon(item) : FISTS;
 }
 
 export function dps(stats: CombatStats): number {

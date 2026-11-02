@@ -1,6 +1,6 @@
 ﻿import { COLOSSUS_HP, COLOSSUS_HP_PER_RANK, WEAPONS_BY_ID } from './data';
 import { levelMult } from './stats';
-import { ARENA_W, type BattleUnit } from './battle';
+import { ARENA_W, BANNER_ARMOR, BANNER_DMG, type BattleUnit } from './battle';
 import { mulberry32, range, weightedPick, type Rng } from './rng';
 import type { CombatStats, SpriteLook, WeaponDef } from './types';
 
@@ -16,6 +16,11 @@ interface Template {
   weight: number;
   uniform: string;
   helmet: string;
+  /** Mécanique propre à la troupe (troupes de fin de partie). */
+  special?: Pick<BattleUnit, 'flying' | 'stealth' | 'banner' | 'mines'>;
+  /** Poids supplémentaire de la mécanique dans le budget de menace. */
+  threatMult?: number;
+  scale?: number;
 }
 
 const TEMPLATES: Template[] = [
@@ -28,7 +33,23 @@ const TEMPLATES: Template[] = [
   // Ennemis de milieu de partie : un soigneur à abattre en priorité, et un tireur à zone
   { id: 'medic', name: 'Infirmier', hp: 70, power: 0.8, speed: 60, armor: 0, weapon: 'medic', minLevel: 14, weight: 7, uniform: '#e0e0e0', helmet: '#b02a2a' },
   { id: 'shocker', name: 'Électricien', hp: 90, power: 0.8, speed: 58, armor: 5, weapon: 'tesla', minLevel: 18, weight: 7, uniform: '#2a4a6a', helmet: '#7fd4ff' },
+  // Fin de partie : chaque troupe impose une réponse (tireurs contre les drones, pas de zone contre l'étendard…)
+  { id: 'deminer', name: 'Démineur', hp: 90, power: 0.7, speed: 62, armor: 5, weapon: 'pistol', minLevel: 22, weight: 7, uniform: '#5a5a2a', helmet: '#c8a83a', special: { mines: { every: 3.5, dmg: 3, r: 42 } }, threatMult: 1.25 },
+  { id: 'drone', name: 'Drone', hp: 55, power: 0.85, speed: 95, armor: 0, weapon: 'smg', minLevel: 25, weight: 8, uniform: '#3a3f46', helmet: '#9aa4ae', special: { flying: true }, threatMult: 1.3, scale: 0.85 },
+  { id: 'banner', name: 'Porte-étendard', hp: 140, power: 0.6, speed: 55, armor: 10, weapon: 'spear', minLevel: 28, weight: 5, uniform: '#7a1f3a', helmet: '#e0b03a', special: { banner: true }, threatMult: 1.5 },
+  { id: 'stalker', name: 'Camoufleur', hp: 70, power: 1.2, speed: 78, armor: 0, weapon: 'revolver', minLevel: 32, weight: 7, uniform: '#2f3a2a', helmet: '#4a5a3a', special: { stealth: true }, threatMult: 1.2 },
 ];
+
+/** Mécanique spéciale d'une troupe, en clair (aperçu, wiki). */
+export function specialDesc(id: string): string | null {
+  const t = TEMPLATES.find((x) => x.id === id);
+  if (!t?.special) return null;
+  if (t.special.mines) return 'Pose des mines qui explosent au passage de vos soldats';
+  if (t.special.flying) return 'Vole : seules les armes à distance l’atteignent tant qu’il reste des ennemis au sol (mêlée à 50 % ensuite), et la zone l’épargne';
+  if (t.special.banner) return `Aura : ses alliés proches font +${Math.round((BANNER_DMG - 1) * 100)} % de dégâts et ont +${BANNER_ARMOR} armure. Abattez-le en premier`;
+  if (t.special.stealth) return 'Invisible et impossible à cibler jusqu’à son premier tir';
+  return null;
+}
 
 const BOSS_NAMES = ['Capitaine Moustache', 'Général Pétard', 'Colonel Boulet', 'Sergent Massacre', 'Commandant Tonnerre', 'Maréchal Bedaine'];
 const BOSS_WEAPONS = ['shotgun', 'bazooka', 'minigun', 'railgun', 'mortar'];
@@ -45,7 +66,7 @@ export function levelPower(level: number): number {
 }
 
 /** Troupes ennemies, pour les présenter dans le wiki. */
-export const ENEMY_TEMPLATES: readonly Pick<Template, 'name' | 'weapon' | 'minLevel'>[] = TEMPLATES;
+export const ENEMY_TEMPLATES: readonly Pick<Template, 'id' | 'name' | 'weapon' | 'minLevel'>[] = TEMPLATES;
 
 export function campaignEnemyCount(level: number): number {
   return Math.min(2 + Math.floor(level * 0.55), 18);
@@ -109,7 +130,7 @@ function makeEnemy(t: Template, weapon: WeaponDef, index: number, m: number, sca
     secondWind: false,
     heal: !!weapon.heal,
   };
-  return { id: `e${index}`, team: 'enemy', name: nameOverride ?? t.name, look, scale, stats };
+  return { id: `e${index}`, team: 'enemy', name: nameOverride ?? t.name, look, scale: t.scale ?? scale, stats, ...t.special, threatMult: t.threatMult };
 }
 
 function compose(level: number, count: number, rng: Rng): Template[] {
@@ -123,9 +144,10 @@ function compose(level: number, count: number, rng: Rng): Template[] {
  * (la force d'une armée croît avec le carré de la somme de ces valeurs). Coefficients mesurés en simulation : à budget
  * égal, la portée pèse très lourd (un tireur d'élite tire sans riposte) et la mêlée peu (elle meurt en traversant le feu).
  */
-function threat(s: CombatStats): number {
+function threat(u: BattleUnit): number {
+  const s = u.stats;
   const offense = (s.damage / s.cooldown) * (1 + s.aoe / 80) * (s.ranged ? Math.pow(s.range / 150, 1.3) : 0.4);
-  return Math.sqrt(s.maxHp * (1 + s.armor / 100) * offense);
+  return Math.sqrt(s.maxHp * (1 + s.armor / 100) * offense) * (u.threatMult ?? 1);
 }
 
 /** Les boss restent un cran au-dessus des niveaux qui les entourent. */
@@ -152,7 +174,7 @@ export function threatBudget(level: number): number {
  * crée un mur isolé : la composition doit changer la manière de jouer un combat, pas sa difficulté.
  */
 function fitToBudget(units: BattleUnit[], level: number, bossLevel: boolean): BattleUnit[] {
-  const total = units.reduce((sum, u) => sum + threat(u.stats), 0);
+  const total = units.reduce((sum, u) => sum + threat(u), 0);
   const k = (threatBudget(level) * (bossLevel ? BOSS_BUDGET : 1)) / total;
   for (const u of units) {
     u.stats.maxHp *= k;
@@ -181,7 +203,7 @@ function makeBoss(level: number, index: number, m: number, mods: ArmyMods = {}):
   const k = Math.max(0, Math.ceil(level / BOSS_EVERY) - 1);
   const weapon = WEAPONS_BY_ID[BOSS_WEAPONS[k % BOSS_WEAPONS.length]];
   const bossT: Template = { id: 'boss', name: BOSS_NAMES[k % BOSS_NAMES.length], hp: 320, power: 0.75, speed: 55, armor: 10, weapon: weapon.id, minLevel: 1, weight: 0, uniform: '#5a1a1a', helmet: '#d4a017' };
-  return makeEnemy(bossT, weapon, index, m, 1.6, bossT.name, mods);
+  return { ...makeEnemy(bossT, weapon, index, m, 1.6, bossT.name, mods), boss: true };
 }
 
 export function buildTrainingEnemies(avgLevel: number, squadSize: number, rng: Rng = Math.random): BattleUnit[] {
@@ -296,7 +318,7 @@ export function buildColossus(rank: number, hp: number): BattleUnit {
     secondWind: false,
     heal: false,
   };
-  return { id: 'colossus', team: 'enemy', name: `Le Colosse (rang ${rank})`, look, scale: 1.8, stats, hp, growth: 4 };
+  return { id: 'colossus', team: 'enemy', name: `Le Colosse (rang ${rank})`, look, scale: 1.8, stats, hp, growth: 4, boss: true };
 }
 
 // ---------- Simulation ----------
@@ -375,4 +397,64 @@ export function previewUnits(units: BattleUnit[], boss: boolean): ArmyPreview {
   for (const u of units) counts.set(u.name, (counts.get(u.name) ?? 0) + 1);
   const elites = [...new Set(units.map((u) => u.elite).filter(Boolean))].map((name) => ELITE_AFFIXES.find((a) => a.name === name)!);
   return { count: units.length, boss, groups: [...counts].map(([name, count]) => ({ name, count })), elites };
+}
+
+// ---------- Tour sans fin ----------
+
+export interface TowerCurse {
+  id: string;
+  name: string;
+  icon: string;
+  desc: string;
+  /** Effet sur les ennemis (après recalage sur le budget, pour durcir vraiment l'étage). */
+  enemy?: (s: CombatStats) => void;
+  /** Effet sur vos soldats. */
+  ally?: (s: CombatStats) => void;
+  /** Ennemis supplémentaires, et élites supplémentaires. */
+  extra?: number;
+  elites?: number;
+}
+
+/** Une malédiction s'ajoute tous les TOWER_CURSE_EVERY étages ; une fois la liste épuisée, elles se cumulent à nouveau. */
+export const TOWER_CURSE_EVERY = 5;
+export const TOWER_CURSES: TowerCurse[] = [
+  { id: 'swift', name: 'Pas de course', icon: '💨', desc: 'Ennemis +20 % vitesse', enemy: (s) => { s.speed *= 1.2; } },
+  { id: 'armor', name: 'Blindage', icon: '🛡️', desc: 'Ennemis +15 armure', enemy: (s) => { s.armor += 15; } },
+  { id: 'weary', name: 'Fatigue', icon: '🥱', desc: 'Vos soldats −12 % PV', ally: (s) => { s.maxHp *= 0.88; } },
+  { id: 'regen', name: 'Sang chaud', icon: '🩸', desc: 'Ennemis : régénèrent 1 % des PV par seconde', enemy: (s) => { s.regen += 0.01; } },
+  { id: 'elite', name: 'Corps d’élite', icon: '★', desc: 'Deux élites de plus', elites: 2 },
+  { id: 'fury', name: 'Furie', icon: '😡', desc: 'Ennemis +20 % dégâts', enemy: (s) => { s.damage *= 1.2; } },
+  { id: 'fog', name: 'Brouillard', icon: '🌫️', desc: 'Portée de vos soldats −15 %', ally: (s) => { s.range *= 0.85; } },
+  { id: 'horde', name: 'Renforts', icon: '👥', desc: '+3 ennemis', extra: 3 },
+];
+
+/** Puissance d'un étage : au-dessus de la fin de la campagne, un niveau de plus par étage. */
+export function towerLevel(floor: number): number {
+  return 20 + floor;
+}
+
+export const isTowerBoss = (floor: number): boolean => floor % TOWER_CURSE_EVERY === 0;
+
+/** Malédictions actives à un étage, dans l'ordre où elles sont apparues (doublons possibles après un tour complet). */
+export function towerCurses(floor: number): TowerCurse[] {
+  const count = Math.floor((floor - 1) / TOWER_CURSE_EVERY);
+  return Array.from({ length: count }, (_, k) => TOWER_CURSES[k % TOWER_CURSES.length]);
+}
+
+/** Ennemis d'un étage : fixes pour un étage donné, pour qu'on puisse s'y préparer. */
+export function buildTowerEnemies(floor: number): BattleUnit[] {
+  const level = towerLevel(floor);
+  const curses = towerCurses(floor);
+  const rng = mulberry32(floor * 104729 + 7);
+  const count = Math.min(24, campaignEnemyCount(level) + curses.reduce((n, c) => n + (c.extra ?? 0), 0));
+  const elites = Math.min(count, eliteCount(level) + curses.reduce((n, c) => n + (c.elites ?? 0), 0));
+  const units = fitToBudget(army(level, count, isTowerBoss(floor) ? 1 : 0, rng, {}, undefined, elites), level, isTowerBoss(floor));
+  for (const c of curses) if (c.enemy) for (const u of units) c.enemy(u.stats);
+  return units;
+}
+
+/** Applique aux soldats les malédictions d'un étage. Modifie les stats. */
+export function applyTowerCurses(allies: BattleUnit[], floor: number): BattleUnit[] {
+  for (const c of towerCurses(floor)) if (c.ally) for (const u of allies) c.ally(u.stats);
+  return allies;
 }

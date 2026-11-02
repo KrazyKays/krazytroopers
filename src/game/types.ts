@@ -1,8 +1,9 @@
-export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
+export type Rarity = 'common' | 'rare' | 'epic' | 'legendary' | 'mythic';
 export type Team = 'ally' | 'enemy';
 export type TitleId = 'legende' | 'legion';
 export type TacticId = 'balanced' | 'assault' | 'bulwark' | 'hunters';
 export type PositionId = 'free' | 'front' | 'cover' | 'rear';
+export type TraitId = 'hothead' | 'coward' | 'glutton' | 'lucky' | 'stoic' | 'nerd' | 'myopic' | 'tough' | 'speedy' | 'joker';
 
 export interface Appearance {
   skin: number;
@@ -33,11 +34,17 @@ export interface Soldier {
   legions: number;
   /** Place du soldat dans la formation au combat. */
   position: PositionId;
+  /** Trait de personnalité : un petit bonus de stats et des répliques en combat. */
+  trait: TraitId;
 }
 
 export interface WeaponItem {
   uid: string;
   defId: string;
+  /** Préfixe aléatoire tiré à l'obtention (voir WEAPON_AFFIXES). */
+  affix?: string;
+  /** Niveau d'amélioration à l'Atelier, de 0 à WEAPON_MAX_PLUS. */
+  plus?: number;
 }
 
 export const BATTLE_SPEEDS = [0.5, 1, 2, 4] as const;
@@ -79,6 +86,8 @@ export interface GameState {
   claimedGoals: string[];
   /** Jauge de butin : une arme tombe chaque fois qu'elle se remplit (voir LOOT_METER_MAX). */
   lootMeter: number;
+  /** Tour sans fin : dernier étage franchi. */
+  towerFloor: number;
 }
 
 export interface SurvivalRun {
@@ -87,8 +96,21 @@ export interface SurvivalRun {
   wave: number;
   /** Or accumulé, versé en encaissant. */
   pot: number;
-  /** PV restants de chaque soldat encore engagé. */
+  /** PV restants de chaque soldat encore engagé (et des mercenaires). */
   hp: Record<string, number>;
+  /** Bonus d'expédition déjà choisis (voir SURVIVAL_BOONS). */
+  boons: string[];
+  /** Bonus proposés après la dernière vague, à choisir avant la suivante. */
+  choices: string[] | null;
+  /** Mercenaires recrutés pendant l'expédition. */
+  mercs: Mercenary[];
+}
+
+export interface Mercenary {
+  id: string;
+  name: string;
+  weaponId: string;
+  level: number;
 }
 
 export type WeaponShape =
@@ -132,6 +154,11 @@ export interface WeaponDef {
   speedPct?: number;
   /** Arme de soin : soigne l'allié le plus blessé au lieu de tirer, tant qu'il y en a un. */
   heal?: boolean;
+  /** Effets uniques des armes mythiques. */
+  chain?: number;
+  pierce?: boolean;
+  execute?: number;
+  thorns?: number;
   shape: WeaponShape;
   color: string;
   droppable: boolean;
@@ -184,6 +211,14 @@ export interface CombatStats {
   heal: boolean;
   /** Vise l'ennemi le plus affaibli à portée plutôt que le plus proche (tactique « Chasse aux blessés »). */
   focusWeak?: boolean;
+  /** Le coup rebondit sur ce nombre d'ennemis proches (60 % des dégâts). */
+  chain?: number;
+  /** Le tir traverse et touche tous les ennemis alignés. */
+  pierce?: boolean;
+  /** Achève les cibles passées sous cette part de leurs PV. */
+  execute?: number;
+  /** Renvoie cette part des dégâts subis à l'attaquant. */
+  thorns?: number;
 }
 
 export interface SpriteLook {

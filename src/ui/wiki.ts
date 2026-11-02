@@ -1,4 +1,10 @@
-import { BOSS_EVERY, campaignEnemyCount, DAILY_MODIFIERS, ELITE_AFFIXES, eliteCount, ENEMY_TEMPLATES } from '../game/enemies';
+import { BOSS_EVERY, campaignEnemyCount, DAILY_MODIFIERS, ELITE_AFFIXES, eliteCount, ENEMY_TEMPLATES, specialDesc, TOWER_CURSE_EVERY, TOWER_CURSES, towerLevel } from '../game/enemies';
+import { BIOMES, CHAPTER_SIZE } from '../game/biomes';
+import { TOWER_LEGENDARY_EVERY, TOWER_MYTHIC_EVERY, towerGold } from '../game/combat';
+import { FIRST_PULL_RARITY } from '../game/roster';
+import { BOON_CHOICES, GREED_BONUS, MAX_MERCS, SURVIVAL_BOONS } from '../game/survival';
+import { TRAITS } from '../game/traits';
+import { WEAPON_AFFIXES } from '../game/weapons';
 import {
   BARRACKS,
   BOSS_FREE_PULLS,
@@ -35,6 +41,13 @@ import {
   WEAPON_PULL10_COST,
   WEAPON_PULL_COST,
   WEAPONS_BY_ID,
+  AFFIX_CHANCE,
+  mythicEffect,
+  PULL_RARITIES,
+  WEAPON_MAX_PLUS,
+  WEAPON_PLUS_COST,
+  WEAPON_PLUS_DMG,
+  WEAPON_PLUS_MATERIAL,
 } from '../game/data';
 import { unlockLevel } from '../game/progress';
 import { FAMILY_LABELS, POSITIONS, SYNERGIES, TACTICS, weaponFamily } from '../game/squad';
@@ -66,7 +79,7 @@ function table(headers: string[], rows: Child[][]): HTMLElement {
 
 function weaponRows(): Child[][] {
   const order = (id: string) => RARITY_ORDER.indexOf(WEAPONS_BY_ID[id].rarity);
-  return WEAPONS.filter((w) => w.droppable)
+  return WEAPONS.filter((w) => w.droppable || w.rarity === 'mythic')
     .sort((x, y) => order(x.id) - order(y.id))
     .map((w) => {
       const family = weaponFamily(w);
@@ -223,8 +236,15 @@ function sections(st: GameState): Section[] {
           title: 'Rareté',
           body: [
             p('La rareté d’un soldat multiplie ses PV et ses dégâts. Celle d’une arme n’ajoute pas de multiplicateur : ses valeurs figurent dans la liste des armes.'),
-            table(['Rareté', 'Multiplicateur', 'Taux', 'Renvoi'], RARITY_ORDER.map((r) => [RARITIES[r].label, `×${fmt(RARITIES[r].statMult, 2)}`, `${RARITIES[r].rate} %`, `${RARITIES[r].releaseValue} or`])),
-            p(`Un soldat Épique ou mieux est garanti au plus tard au ${PITY_LIMIT}e tirage sans en avoir obtenu.`),
+            table(['Rareté', 'Multiplicateur', 'Taux', 'Renvoi'], PULL_RARITIES.map((r) => [RARITIES[r].label, `×${fmt(RARITIES[r].statMult, 2)}`, `${RARITIES[r].rate} %`, `${RARITIES[r].releaseValue} or`])),
+            p(`Un soldat Épique ou mieux est garanti au plus tard au ${PITY_LIMIT}e tirage sans en avoir obtenu. La toute première recrue de la partie est toujours ${RARITIES[FIRST_PULL_RARITY].label}.`),
+          ],
+        },
+        {
+          title: 'Personnalités',
+          body: [
+            p('Chaque soldat a un trait de personnalité tiré à son arrivée : un petit bonus, parfois assorti d’un défaut, et ses propres répliques pendant les combats.'),
+            table(['Trait', 'Effet'], TRAITS.map((t) => [`${t.icon} ${t.name}`, t.desc])),
           ],
         },
         {
@@ -277,9 +297,30 @@ function sections(st: GameState): Section[] {
           body: [
             list(
               `Armurerie : ${WEAPON_PULL_COST} or l’arme, ${WEAPON_PULL10_COST} or les 10, avec les mêmes taux que le recrutement et sa propre garantie.`,
-              `Vente : ${RARITY_ORDER.map((r) => `${RARITIES[r].label} ${RARITIES[r].sellValue} or`).join(', ')}.`,
-              `Forge : ${FORGE_INPUT} armes non équipées d’une même rareté donnent une arme au hasard de la rareté supérieure. Coût : ${(['common', 'rare', 'epic'] as const).map((r) => `${RARITIES[r].label} ${FORGE_FEE[r]} or`).join(', ')}. Les armes légendaires ne se fusionnent pas.`,
+              `Vente : ${RARITY_ORDER.map((r) => `${RARITIES[r].label} ${RARITIES[r].sellValue} or`).join(', ')}, plus 25 % par cran d’amélioration.`,
+              `Forge : ${FORGE_INPUT} armes non équipées d’une même rareté donnent une arme au hasard de la rareté supérieure. Coût : ${(['common', 'rare', 'epic', 'legendary'] as const).map((r) => `${RARITIES[r].label} ${FORGE_FEE[r]} or`).join(', ')}. Les armes légendaires ne se fusionnent qu’avec la Forge mythique (niveau ${unlockLevel('mythicforge')}).`,
             ),
+          ],
+        },
+        {
+          title: 'Préfixes',
+          body: [
+            p(`Une arme obtenue peut porter un préfixe qui s’ajoute à ses bonus : ${PULL_RARITIES.map((r) => `${RARITIES[r].label} ${Math.round(AFFIX_CHANCE[r] * 100)} %`).join(', ')} de chances, et toujours sur une arme Mythique. Deux exemplaires d’une même arme ne se valent donc pas forcément.`),
+            table(['Préfixe', 'Effet'], WEAPON_AFFIXES.map((a) => [`… ${a.suffix}`, a.desc])),
+          ],
+        },
+        {
+          title: 'Atelier',
+          body: [
+            p(`Dès le niveau ${unlockLevel('workshop')} de la campagne, chaque arme peut être améliorée de +1 à +${WEAPON_MAX_PLUS} : chaque cran ajoute +${Math.round(WEAPON_PLUS_DMG * 100)} % de dégâts (et de soins). Le cran suivant coûte ${PULL_RARITIES.map((r) => `${RARITIES[r].label} ${WEAPON_PLUS_COST[r]}`).join(', ')} or (Mythique ${WEAPON_PLUS_COST.mythic}), multiplié par le cran visé.`),
+            p(`À partir de +${WEAPON_PLUS_MATERIAL}, chaque amélioration consomme aussi une arme de même rareté, non équipée et non améliorée (celles sans préfixe partent en premier).`),
+          ],
+        },
+        {
+          title: 'Armes mythiques',
+          body: [
+            p(`La rareté au-dessus de Légendaire. Elles ne se tirent jamais : on les forge à partir de ${FORGE_INPUT} légendaires, ou on les gagne tous les ${TOWER_MYTHIC_EVERY} étages de la Tour sans fin. Chacune porte un effet unique, et toujours un préfixe.`),
+            list(...WEAPONS.filter((w) => w.rarity === 'mythic').map((w) => [b(`${w.name} : `), mythicEffect(w) ?? ''])),
           ],
         },
       ],
@@ -323,7 +364,7 @@ function sections(st: GameState): Section[] {
       articles: [
         {
           title: 'Troupes',
-          body: [p(`Un niveau de campagne compte de ${campaignEnemyCount(1)} à ${campaignEnemyCount(99)} ennemis, de plus en plus puissants.`), table(['Ennemi', 'Arme', 'Apparaît au niveau'], ENEMY_TEMPLATES.map((t) => [t.name, WEAPONS_BY_ID[t.weapon].name, String(t.minLevel)]))],
+          body: [p(`Un niveau de campagne compte de ${campaignEnemyCount(1)} à ${campaignEnemyCount(99)} ennemis, de plus en plus puissants. Après le niveau 20, de nouvelles troupes exigent une réponse précise.`), table(['Ennemi', 'Arme', 'Apparaît au niveau', 'Particularité'], ENEMY_TEMPLATES.map((t) => [t.name, WEAPONS_BY_ID[t.weapon].name, String(t.minLevel), specialDesc(t.id) ?? '—']))],
         },
         {
           title: 'Boss',
@@ -345,7 +386,19 @@ function sections(st: GameState): Section[] {
       articles: [
         {
           title: 'Campagne',
-          body: [p('Le mode principal, niveau après niveau : XP, or, butin et étoiles. Certains paliers débloquent de nouvelles fonctionnalités.')],
+          body: [
+            p(`Le mode principal, niveau après niveau : XP, or, butin et étoiles. Certains paliers débloquent de nouvelles fonctionnalités. La carte est découpée en chapitres de ${CHAPTER_SIZE} niveaux, chacun dans son décor, et la campagne continue au-delà du niveau 30.`),
+            list(...BIOMES.map((bi, i) => [b(`${bi.icon} ${bi.name} : `), i < BIOMES.length - 1 ? `niveaux ${i * CHAPTER_SIZE + 1} à ${(i + 1) * CHAPTER_SIZE}` : `à partir du niveau ${i * CHAPTER_SIZE + 1}`])),
+          ],
+        },
+        {
+          title: 'Tour sans fin',
+          body: [
+            p(`Dès le niveau ${unlockLevel('tower')} de la campagne. Chaque étage est fixe et plus dur que le précédent (l’étage 1 vaut le niveau ${towerLevel(1)}, puis un niveau de plus par étage), avec un boss tous les ${TOWER_CURSE_EVERY} étages. Une défaite ne tue personne : retentez autant que vous voulez.`),
+            p(`Récompenses à chaque étage franchi : ${towerGold(1)} or au premier étage, puis 10 de plus par étage, et la moitié de l’XP d’un niveau équivalent. Arme de boss tous les ${TOWER_CURSE_EVERY} étages, arme légendaire et 1 tirage tous les ${TOWER_LEGENDARY_EVERY}, arme mythique tous les ${TOWER_MYTHIC_EVERY}.`),
+            p(`Malédictions : une de plus tous les ${TOWER_CURSE_EVERY} étages (à partir de l’étage ${TOWER_CURSE_EVERY + 1}), dans cet ordre. Une fois la liste épuisée, elles reprennent depuis le début et se cumulent.`),
+            list(...TOWER_CURSES.map((c) => [b(`${c.icon} ${c.name} : `), c.desc])),
+          ],
         },
         {
           title: 'Chair à canon',
@@ -376,7 +429,11 @@ function sections(st: GameState): Section[] {
         },
         {
           title: 'Survie',
-          body: [p(`Enchaînez les vagues avec les mêmes soldats, qui ne récupèrent que ${Math.round(SURVIVAL_REST_HEAL * 100)} % de leurs PV entre deux vagues. Les premières vagues sont plus faciles que votre niveau de campagne, puis chaque vague monte d’un niveau. Un soldat tombé lors d’une vague gagnée est rapatrié et quitte l’expédition. L’or s’accumule dans un pot : encaissez-le quand vous voulez, car une défaite n’en laisse que la moitié et tue les soldats tombés.`)],
+          body: [
+            p(`Enchaînez les vagues avec les mêmes soldats, qui ne récupèrent que ${Math.round(SURVIVAL_REST_HEAL * 100)} % de leurs PV entre deux vagues. Les premières vagues sont plus faciles que votre niveau de campagne, puis chaque vague monte d’un niveau. Un soldat tombé lors d’une vague gagnée est rapatrié et quitte l’expédition. L’or s’accumule dans un pot : encaissez-le quand vous voulez, car une défaite n’en laisse que la moitié et tue les soldats tombés.`),
+            p(`Après chaque vague gagnée, choisissez un bonus parmi ${BOON_CHOICES} pour tout le reste de l’expédition. Les bonus se cumulent ; un Contrat juteux ajoute ${Math.round(GREED_BONUS * 100)} % d’or au pot à chaque vague, et jusqu’à ${MAX_MERCS} mercenaires peuvent vous rejoindre (sans XP). Si seuls des mercenaires restent debout après une vague gagnée, l’expédition rentre avec tout le pot.`),
+            list(...SURVIVAL_BOONS.map((bo) => [b(`${bo.icon} ${bo.name} : `), bo.desc])),
+          ],
         },
       ],
     },

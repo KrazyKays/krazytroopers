@@ -41,7 +41,7 @@ export const LOOT_REPLAY = 1;
 /** La jauge démarre presque pleine : le premier niveau de campagne offre déjà une arme. */
 export const START_LOOT = LOOT_METER_MAX - LOOT_FIRST_CLEAR;
 
-export type UnlockId = 'tactics' | 'squad4' | 'armory' | 'simulation' | 'positions' | 'daily' | 'squad5' | 'autopick' | 'forge' | 'survival' | 'bulk' | 'squad6' | 'fodder';
+export type UnlockId = 'tactics' | 'squad4' | 'armory' | 'simulation' | 'positions' | 'daily' | 'squad5' | 'autopick' | 'forge' | 'workshop' | 'survival' | 'bulk' | 'squad6' | 'fodder' | 'tower' | 'mythicforge';
 
 export interface UnlockDef {
   id: UnlockId;
@@ -63,9 +63,12 @@ export const UNLOCKS: UnlockDef[] = [
   { id: 'squad5', level: 8, label: "5e place d'escouade", desc: "Engagez jusqu'à 5 soldats par combat." },
   { id: 'autopick', level: 10, label: 'Choix automatique', desc: "Laissez l'état-major choisir les améliorations conseillées de toute l'escouade en un clic." },
   { id: 'forge', level: 11, label: 'Forge', desc: "Fusionnez 3 armes d'une même rareté en une arme de la rareté supérieure." },
+  { id: 'workshop', level: 12, label: 'Atelier', desc: "Améliorez vos armes de +1 à +10 : chaque cran augmente leurs dégâts." },
   { id: 'survival', level: 13, label: 'Mode Survie', desc: 'Enchaînez les vagues sans soins complets : encaissez vos gains ou risquez tout.' },
   { id: 'bulk', level: 15, label: 'Recrutement ×10', desc: 'Recrutez soldats et armes par lots de 10, avec une unité offerte.' },
   { id: 'squad6', level: 20, label: "6e place d'escouade", desc: "Engagez jusqu'à 6 soldats par combat." },
+  { id: 'tower', level: 24, label: 'Tour sans fin', desc: 'Grimpez des étages de plus en plus durs, avec une malédiction de plus tous les 5 étages.' },
+  { id: 'mythicforge', level: 30, label: 'Forge mythique', desc: 'Fusionnez 3 armes légendaires en une arme Mythique, dotée d’un effet unique.' },
 ];
 
 /** Renforts d'urgence : tirages offerts à un joueur sans soldat ni or, pour qu'une partie ne soit jamais bloquée. */
@@ -82,7 +85,17 @@ export const BOSS_FREE_PULLS = 1;
 
 /** Forge : nombre d'armes d'une même rareté à fondre, et coût en or selon la rareté de départ. */
 export const FORGE_INPUT = 3;
-export const FORGE_FEE: Record<Exclude<Rarity, 'legendary'>, number> = { common: 40, rare: 120, epic: 300 };
+export const FORGE_FEE: Record<Exclude<Rarity, 'mythic'>, number> = { common: 40, rare: 120, epic: 300, legendary: 1500 };
+
+/** Atelier : niveau d'amélioration maximal d'une arme, bonus de dégâts par cran et coût de base selon la rareté. */
+export const WEAPON_MAX_PLUS = 10;
+export const WEAPON_PLUS_DMG = 0.06;
+export const WEAPON_PLUS_COST: Record<Rarity, number> = { common: 15, rare: 30, epic: 60, legendary: 120, mythic: 200 };
+/** À partir de ce cran, chaque amélioration consomme aussi une arme non équipée de même rareté. */
+export const WEAPON_PLUS_MATERIAL = 5;
+
+/** Chances qu'une arme obtenue porte un préfixe, selon sa rareté. */
+export const AFFIX_CHANCE: Record<Rarity, number> = { common: 0.15, rare: 0.3, epic: 0.5, legendary: 0.75, mythic: 1 };
 
 /** Étoiles de campagne : un coffre (tirage gratuit) toutes les STAR_CHEST_EVERY étoiles. */
 export const STAR_CHEST_EVERY = 18;
@@ -117,9 +130,13 @@ export const RARITIES: Record<Rarity, RarityInfo> = {
   rare: { label: 'Rare', color: '#2479d1', statMult: 1.1, rate: 28, sellValue: 30, releaseValue: 50 },
   epic: { label: 'Épique', color: '#8b3fd9', statMult: 1.2, rate: 8, sellValue: 80, releaseValue: 120 },
   legendary: { label: 'Légendaire', color: '#d4860b', statMult: 1.35, rate: 2, sellValue: 200, releaseValue: 300 },
+  // Rareté réservée aux armes : jamais tirée au recrutement ni à l'armurerie, seulement forgée ou gagnée dans la Tour
+  mythic: { label: 'Mythique', color: '#e0245e', statMult: 1.5, rate: 0, sellValue: 600, releaseValue: 600 },
 };
 
-export const RARITY_ORDER: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
+export const RARITY_ORDER: Rarity[] = ['common', 'rare', 'epic', 'legendary', 'mythic'];
+/** Raretés possibles pour un soldat ou un tirage. */
+export const PULL_RARITIES: Rarity[] = ['common', 'rare', 'epic', 'legendary'];
 
 export const WEAPONS: WeaponDef[] = [
   { id: 'fists', name: 'Poings nus', rarity: 'common', damage: 6, range: 24, cooldown: 0.7, aoe: 0, shape: 'fists', color: '#d9b38c', droppable: false },
@@ -149,7 +166,21 @@ export const WEAPONS: WeaponDef[] = [
   { id: 'riot', name: 'Bouclier anti-émeute', rarity: 'rare', damage: 12, range: 26, cooldown: 0.9, aoe: 0, armor: 45, shape: 'shield', color: '#3d6e8f', droppable: true },
   { id: 'tower', name: 'Bouclier blindé', rarity: 'epic', damage: 20, range: 28, cooldown: 1.1, aoe: 0, armor: 70, shape: 'shield', color: '#56654a', droppable: true },
   { id: 'aegis', name: 'Égide', rarity: 'legendary', damage: 34, range: 30, cooldown: 1, aoe: 25, armor: 100, shape: 'shield', color: '#ffd45e', droppable: true },
+  // Mythiques : jamais tirées, chacune avec un effet unique géré par le combat
+  { id: 'ohmstorm', name: "Tempête d'Ohm", rarity: 'mythic', damage: 40, range: 170, cooldown: 0.9, aoe: 0, chain: 3, shape: 'tesla', color: '#b48cff', droppable: false },
+  { id: 'comet', name: 'Lance-comète', rarity: 'mythic', damage: 120, range: 320, cooldown: 3, aoe: 0, pierce: true, shape: 'railgun', color: '#ff5c8a', droppable: false },
+  { id: 'reaper', name: 'Moissonneuse', rarity: 'mythic', damage: 60, range: 34, cooldown: 0.8, aoe: 25, armor: 70, lifesteal: 0.15, speedPct: 0.35, execute: 0.2, shape: 'katana', color: '#7dff6a', droppable: false },
+  { id: 'bastion', name: 'Bastion éternel', rarity: 'mythic', damage: 40, range: 30, cooldown: 1, aoe: 25, armor: 130, thorns: 0.35, shape: 'shield', color: '#ff9e3d', droppable: false },
 ];
+
+/** Effet unique d'une arme mythique, en clair. */
+export function mythicEffect(w: WeaponDef): string | null {
+  if (w.chain) return `Les coups rebondissent sur ${w.chain} ennemis proches (60 % des dégâts)`;
+  if (w.pierce) return 'Le tir traverse et touche tous les ennemis alignés';
+  if (w.execute) return `Achève net les ennemis sous ${Math.round(w.execute * 100)} % de leurs PV`;
+  if (w.thorns) return `Renvoie ${Math.round(w.thorns * 100)} % des dégâts subis à l'attaquant`;
+  return null;
+}
 
 export const WEAPONS_BY_ID: Record<string, WeaponDef> = Object.fromEntries(WEAPONS.map((w) => [w.id, w]));
 export const FISTS = WEAPONS_BY_ID.fists;

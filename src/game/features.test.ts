@@ -9,6 +9,7 @@ import { createSoldier, forgeWeapons, trainingCost } from './roster';
 import { createInitialState, parseSave } from './state';
 import { computeStats } from './stats';
 import { recommendedUpgrade, upgradeGains } from './upgrades';
+import { pickBoon } from './survival';
 import type { GameState } from './types';
 
 /** `n` soldats communs au niveau donné, chacun équipé de son arme, sans les armes de départ. */
@@ -164,6 +165,10 @@ describe('survie', () => {
     expect(st.survival!.pot).toBeGreaterThan(0);
     // rien n'est versé avant la fin de l'expédition
     expect(st.gold).toBe(gold);
+    // un bonus doit être choisi avant la vague suivante
+    expect(st.survival!.choices).toHaveLength(3);
+    expect(launchBattle(st, { mode: 'survival', squad: [] }, 2).ok).toBe(false);
+    expect(pickBoon(st, st.survival!.choices!.find((c) => c !== 'tough')!).ok).toBe(true);
     // l'escouade de l'expédition est reprise, quelle que soit la sélection
     const w2 = launchBattle(st, { mode: 'survival', squad: [] }, 2);
     expect(w2.ok && w2.report.survival?.wave).toBe(2);
@@ -180,7 +185,7 @@ describe('survie', () => {
   it('ne verse que la moitié du pot en cas de défaite', () => {
     const st = squadState(1, 1, 'fists');
     st.campaignLevel = 40;
-    st.survival = { squad: ids(st), wave: 9, pot: 101, hp: {} };
+    st.survival = { squad: ids(st), wave: 9, pot: 101, hp: {}, boons: [], choices: null, mercs: [] };
     const gold = st.gold;
     const r = launchBattle(st, { mode: 'survival', squad: [] }, 1);
     if (!r.ok) throw new Error(r.error);
@@ -317,7 +322,7 @@ describe('chair à canon', () => {
     const st = fodder(2);
     st.soldiers[0].favorite = true;
     expect(launchFodder(st, [st.soldiers[0].id]).ok).toBe(false);
-    st.survival = { squad: [st.soldiers[1].id], wave: 1, pot: 0, hp: {} };
+    st.survival = { squad: [st.soldiers[1].id], wave: 1, pot: 0, hp: {}, boons: [], choices: null, mercs: [] };
     expect(launchFodder(st, [st.soldiers[1].id]).ok).toBe(false);
     expect(st.soldiers).toHaveLength(2);
   });

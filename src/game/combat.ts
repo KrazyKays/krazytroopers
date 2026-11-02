@@ -14,19 +14,24 @@ import {
   dailyLevel,
   dailyModifier,
   isBossLevel,
+  isTowerBoss,
+  applyTowerCurses,
+  buildTowerEnemies,
+  towerLevel,
   survivalWaveLevel,
   type DailyModifier,
   type SimulationConfig,
 } from './enemies';
 import { soldierLook } from './look';
 import { isUnlocked, squadMax, unlockLevel, unlocksBetween } from './progress';
-import { rollWeaponDrop, trainingCost } from './roster';
-import { aggregateMods, addXp, computeStats, weaponForSoldier } from './stats';
-import { nextUid } from './state';
+import { rollWeaponDrop, trainingCost, weaponOfRarity } from './roster';
+import { soldierMods, addXp, computeStats, weaponForSoldier } from './stats';
+import { applyBoons, GREED_BONUS, boonCount, mercUnit, newRun, rollBoons } from './survival';
+import { newWeaponItem, resolveWeapon } from './weapons';
 import { mulberry32, randomSeed, shuffle, type Rng } from './rng';
 import type { GameState, Soldier, WeaponDef } from './types';
 
-export type BattleMode = 'training' | 'campaign' | 'daily' | 'survival' | 'fodder';
+export type BattleMode = 'training' | 'campaign' | 'daily' | 'survival' | 'fodder' | 'tower';
 
 export type BattleRequest =
   | { mode: 'training'; squad: string[] }
@@ -34,7 +39,9 @@ export type BattleRequest =
   /** `date` : clé AAAA-MM-JJ du défi, aujourd'hui par défaut. */
   | { mode: 'daily'; squad: string[]; date?: string }
   /** L'escouade n'est lue qu'au départ de l'expédition ; ensuite, ce sont les soldats encore engagés. */
-  | { mode: 'survival'; squad: string[] };
+  | { mode: 'survival'; squad: string[] }
+  /** Tour sans fin : toujours l'étage suivant le dernier franchi. */
+  | { mode: 'tower'; squad: string[] };
 
 export interface SoldierReport {
   id: string;
@@ -56,8 +63,19 @@ export interface SurvivalReport {
   wave: number;
   /** Or en jeu après cette vague (ou versé, si l'expédition s'arrête). */
   pot: number;
-  /** L'expédition est terminée (escouade vaincue) : la moitié du pot a été versée. */
+  /** L'expédition est terminée : la moitié du pot a été versée (défaite), ou tout le pot (plus aucun soldat debout). */
   ended: boolean;
+  /** Seule la moitié du pot a été versée (défaite). */
+  halved: boolean;
+  /** Bonus proposés pour la vague suivante. */
+  choices: string[] | null;
+}
+
+export interface TowerReport {
+  floor: number;
+  /** Étage franchi pour la première fois. */
+  firstClear: boolean;
+  best: number;
 }
 
 export interface ColossusReport {
@@ -89,6 +107,7 @@ export interface BattleReport {
   unlocked: UnlockDef[];
   daily?: { modifier: DailyModifier; streak: number };
   survival?: SurvivalReport;
+  tower?: TowerReport;
   colossus?: ColossusReport;
   /** Or payé au lancement pour les soldats sans entraînement gratuit. */
   trainingFee?: number;
@@ -139,6 +158,15 @@ export function dailyGold(level: number, streak: number): number {
   return 40 + 8 * level + 15 * Math.min(Math.max(streak - 1, 0), 6);
 }
 
+/** Or d'un étage de la Tour franchi pour la première fois. */
+export function towerGold(floor: number): number {
+  return 40 + 10 * floor;
+}
+
+/** Tour : un tirage et une arme légendaire tous les 10 étages, une arme mythique tous les 20. */
+export const TOWER_LEGENDARY_EVERY = 10;
+export const TOWER_MYTHIC_EVERY = 20;
+
 /** Or ajouté au pot de survie par chaque vague remportée. */
 export function survivalWaveGold(waveLevel: number): number {
   return 6 + 2 * waveLevel;
@@ -156,7 +184,7 @@ function allyUnits(st: GameState, squad: Soldier[], hp?: Record<string, number>)
   const stats = squadStats(st, squad);
   return squad.map((s) => {
     const weapon = weaponForSoldier(s, st.weapons);
-    return { id: s.id, team: 'ally', name: s.name, look: soldierLook(s, weapon), scale: 1, soldierId: s.id, stats: stats.get(s.id)!, hp: hp?.[s.id], position: activePosition(st, s), tank: weapon.shape === 'shield' };
+    return { id: s.id, team: 'ally', name: s.name, look: soldierLook(s, weapon), scale: 1, soldierId: s.id, stats: stats.get(s.id)!, hp: hp?.[s.id], position: activePosition(st, s), tank: weapon.shape === 'shield', trait: s.trait };
   });
 }
 
@@ -238,8 +266,18 @@ function setupBattle(st: GameState, req: BattleRequest): Setup | string {
     if (!run && !isUnlocked(st, 'survival')) return `Le mode Survie se débloque au niveau ${unlockLevel('survival')} de la campagne.`;
     const squad = resolveSquad(st, run ? run.squad.filter((id) => st.soldiers.some((s) => s.id === id)) : req.squad);
     if (typeof squad === 'string') return run ? "Plus aucun soldat engagé dans l'expédition." : squad;
+    if (run?.choices) return "Choisissez d'abord un bonus d'expédition.";
     const wave = (run?.wave ?? 0) + 1;
-    return { squad, allies: allyUnits(st, squad, run?.hp), enemies: (rng) => buildSurvivalEnemies(wave, st.campaignLevel, rng), level: survivalWaveLevel(wave, st.campaignLevel) };
+    const allies = [...allyUnits(st, squad, run?.hp), ...(run?.mercs ?? []).map((m) => mercUnit(m, run!.hp[m.id]))];
+    if (run) applyBoons(allies, run);
+    return { squad, allies, enemies: (rng) => buildSurvivalEnemies(wave, st.campaignLevel, rng), level: survivalWaveLevel(wave, st.campaignLevel) };
+  }
+  if (req.mode === 'tower') {
+    if (!isUnlocked(st, 'tower')) return `La Tour sans fin se débloque au niveau ${unlockLevel('tower')} de la campagne.`;
+    const squad = resolveSquad(st, req.squad);
+    if (typeof squad === 'string') return squad;
+    const floor = st.towerFloor + 1;
+    return { squad, allies: applyTowerCurses(allyUnits(st, squad), floor), enemies: () => buildTowerEnemies(floor), level: towerLevel(floor) };
   }
   const squad = resolveSquad(st, req.squad);
   if (typeof squad === 'string') return squad;
@@ -285,7 +323,8 @@ function pickCasualties(fallen: readonly string[], seed: number): Set<string> {
 /** Une défaite peut-elle tuer les soldats tombés dans ce combat ? */
 function canDie(req: BattleRequest): boolean {
   if (req.mode === 'campaign') return req.level > SAFE_LEVELS;
-  return req.mode !== 'training';
+  // La Tour est un défi de puissance : on y retente sa chance sans perdre personne
+  return req.mode !== 'training' && req.mode !== 'tower';
 }
 
 /** Quand les soldats tombés meurent vraiment : toujours (simulation, pour mesurer), sur défaite, ou jamais (entraînement). */
@@ -338,6 +377,7 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
     req.mode === 'training' ? trainingXp(avgLevel)
     : req.mode === 'survival' ? campaignXp(level!) * 0.5
     : req.mode === 'daily' ? campaignXp(level!)
+    : req.mode === 'tower' ? campaignXp(level!) * 0.5
     : campaignXp(req.level) * (firstClear ? 1 : REPLAY_XP);
   const xp = won ? baseXp : baseXp * (req.mode === 'training' ? 0.5 : 0.4);
 
@@ -345,7 +385,7 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   const soldiers: SoldierReport[] = squad.map((s) => {
     const fell = result.deadIds.includes(s.id);
     const died = casualties.has(s.id);
-    const gained = fell ? 0 : Math.round(xp * (1 + aggregateMods(s.upgrades).xpPct));
+    const gained = fell ? 0 : Math.round(xp * (1 + soldierMods(s).xpPct));
     const levelsGained = addXp(s, gained);
     grantLevelPicks(s);
     const kills = result.kills[s.id] ?? 0;
@@ -360,8 +400,9 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
 
   const report: BattleReport = { mode: req.mode, level, won, timeout: result.winner === 'timeout', firstClear, gold: 0, weapon: null, soldiers, freePulls: 0, unlocked: [] };
   const grantWeapon = (w: WeaponDef) => {
-    report.weapon = w;
-    st.weapons.push({ uid: nextUid(st, 'w'), defId: w.id });
+    const item = newWeaponItem(st, w);
+    st.weapons.push(item);
+    report.weapon = resolveWeapon(item);
   };
 
   if (won) st.stats.won++;
@@ -409,8 +450,18 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
       report.freePulls = streak % DAILY_PULL_EVERY === 0 ? 1 : 0;
       grantWeapon(rollWeaponDrop(level!, true));
     }
+  } else if (req.mode === 'tower') {
+    const floor = st.towerFloor + 1;
+    const first = won;
+    if (won) {
+      st.towerFloor = floor;
+      report.gold = towerGold(floor);
+      if (isTowerBoss(floor)) grantWeapon(floor % TOWER_MYTHIC_EVERY === 0 ? weaponOfRarity(Math.random, 'mythic') : floor % TOWER_LEGENDARY_EVERY === 0 ? weaponOfRarity(Math.random, 'legendary') : rollWeaponDrop(level!, true));
+      if (floor % TOWER_LEGENDARY_EVERY === 0) report.freePulls = 1;
+    }
+    report.tower = { floor, firstClear: first, best: st.towerFloor };
   } else {
-    report.survival = survivalAfterWave(st, squad, allies, result, won, level!, grantWeapon);
+    report.survival = survivalAfterWave(st, squad, allies, result, won, level!, grantWeapon, mulberry32(seed ^ 0xb005));
     // le pot n'est versé qu'à la fin de l'expédition (encaissement, ou moitié en cas de défaite)
     if (report.survival.ended) report.gold = report.survival.pot;
   }
@@ -487,27 +538,34 @@ export function launchFodder(st: GameState, squadIds: string[], seed: number = r
   return { ok: true, units, result, report };
 }
 
-function survivalAfterWave(st: GameState, squad: Soldier[], allies: BattleUnit[], result: BattleResult, won: boolean, waveLevel: number, grantWeapon: (w: WeaponDef) => void): SurvivalReport {
-  const run = st.survival ?? { squad: squad.map((s) => s.id), wave: 0, pot: 0, hp: {} };
+function survivalAfterWave(st: GameState, squad: Soldier[], allies: BattleUnit[], result: BattleResult, won: boolean, waveLevel: number, grantWeapon: (w: WeaponDef) => void, rng: Rng): SurvivalReport {
+  const run = st.survival ?? newRun(squad.map((s) => s.id));
   if (!won) {
     st.survival = null;
-    return { wave: run.wave, pot: Math.floor(run.pot / 2), ended: true };
+    return { wave: run.wave, pot: Math.floor(run.pot / 2), ended: true, halved: true, choices: null };
   }
   run.wave++;
-  run.pot += survivalWaveGold(waveLevel);
+  run.pot += Math.round(survivalWaveGold(waveLevel) * (1 + GREED_BONUS * boonCount(run, 'greed')));
   st.bestWave = Math.max(st.bestWave, run.wave);
   if (isBossLevel(run.wave)) grantWeapon(rollWeaponDrop(waveLevel, true));
   // Les tombés sont rapatriés et quittent l'expédition ; les autres soufflent un peu avant la vague suivante
   const standing = squad.filter((s) => !result.deadIds.includes(s.id));
   run.squad = standing.map((s) => s.id);
+  run.mercs = run.mercs.filter((m) => !result.deadIds.includes(m.id));
   run.hp = Object.fromEntries(
-    standing.map((s) => {
-      const maxHp = allies.find((u) => u.id === s.id)!.stats.maxHp;
-      return [s.id, Math.min(maxHp, result.hpLeft[s.id] + maxHp * SURVIVAL_REST_HEAL)];
+    [...standing.map((s) => s.id), ...run.mercs.map((m) => m.id)].map((id) => {
+      const maxHp = allies.find((u) => u.id === id)!.stats.maxHp;
+      return [id, Math.min(maxHp, result.hpLeft[id] + maxHp * SURVIVAL_REST_HEAL)];
     }),
   );
+  // Plus aucun soldat debout (seuls des mercenaires ont tenu) : l'expédition rentre avec tout le pot
+  if (standing.length === 0) {
+    st.survival = null;
+    return { wave: run.wave, pot: run.pot, ended: true, halved: false, choices: null };
+  }
+  run.choices = rollBoons(run, rng);
   st.survival = run;
-  return { wave: run.wave, pot: run.pot, ended: false };
+  return { wave: run.wave, pot: run.pot, ended: false, halved: false, choices: run.choices };
 }
 
 /** Met fin à l'expédition de survie et verse tout le pot. */

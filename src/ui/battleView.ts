@@ -1,11 +1,15 @@
 import { ARENA_H, ARENA_W, DT, type BattleEvent, type BattleResult, type BattleUnit, type Frame } from '../game/battle';
-import { LOOT_METER_MAX, RARITIES } from '../game/data';
+import { LOOT_METER_MAX, RARITIES, UPGRADE_KINDS, UPGRADES_BY_ID } from '../game/data';
+import { biomeFor } from '../game/biomes';
 import type { BattleReport } from '../game/combat';
-import { getState } from '../game/state';
+import { getState, mutate } from '../game/state';
+import { BOONS_BY_ID, pickBoon } from '../game/survival';
+import { ENEMY_LINES, TRAITS_BY_ID } from '../game/traits';
+import { pickUpgrade, recommendedUpgrade } from '../game/upgrades';
 import { BATTLE_SPEEDS, type BattleSpeed } from '../game/types';
 import { h, html } from './dom';
 import { spriteSvg } from './avatar';
-import { fmt, fold, stars, weaponIcon } from './components';
+import { fmt, fold, stars, toast, weaponIcon } from './components';
 
 interface UnitView {
   el: HTMLElement;
@@ -32,16 +36,17 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
   let timer: number | undefined;
   let finished = false;
 
-  const arena = h('div', { class: 'arena' });
+  const arena = h('div', { class: `arena biome-${biomeFor(report?.level ?? 1).id}` });
   const hud = h('div', { class: 'battle-hud' });
   const views: UnitView[] = units.map((u) => {
     const facing: 1 | -1 = u.team === 'ally' ? 1 : -1;
     const fill = h('div', { class: 'hp-fill' });
     const sprite = html(spriteSvg(u.look, 'sprite'));
     const spriteWrap = h('div', { class: 'unit-sprite', style: `transform:scaleX(${facing})` }, sprite);
+    const cls = [`unit team-${u.team}`, u.elite && 'elite', u.flying && 'flying', u.stealth && 'stealthed', u.banner && 'banner', u.boss && 'boss'].filter(Boolean).join(' ');
     const el = h(
       'div',
-      { class: `unit team-${u.team}${u.elite ? ' elite' : ''}`, style: `--s:${u.scale}` },
+      { class: cls, style: `--s:${u.scale}` },
       h('div', { class: 'hpbar' }, fill),
       spriteWrap,
       u.elite ? h('div', { class: 'unit-name' }, `★ ${u.elite}`) : u.scale > 1 && h('div', { class: 'unit-name' }, u.name),
@@ -76,9 +81,89 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
     setTimeout(() => zone.remove(), 600 / speed);
   }
 
+  // ---------- Répliques ----------
+  // Une bulle par soldat toutes les 2,5 s de combat au plus, et une à la fois toutes les 0,8 s : du sel, pas du bruit
+  const lastSaid = new Array<number>(units.length).fill(-Infinity);
+  let lastAny = -Infinity;
+  const pickLine = (lines: readonly string[]) => lines[Math.floor(Math.random() * lines.length)];
+  function say(i: number, line: string | undefined, force = false): void {
+    if (!line || finished) return;
+    const now = idx * DT;
+    if (!force && (now - lastSaid[i] < 2.5 || now - lastAny < 0.8)) return;
+    if (views[i].el.classList.contains('dead')) return;
+    lastSaid[i] = now;
+    lastAny = now;
+    const bubble = h('div', { class: `bubble bubble-${units[i].team}` }, line);
+    views[i].el.appendChild(bubble);
+    setTimeout(() => bubble.remove(), 1700);
+  }
+  const traitLine = (i: number, kind: 'start' | 'kill' | 'hurt' | 'ally'): string | undefined => {
+    const t = units[i].trait ? TRAITS_BY_ID[units[i].trait!] : undefined;
+    return t && pickLine(t.lines[kind]);
+  };
+  function openingLines(): void {
+    const allies = units.map((u, i) => ({ u, i })).filter(({ u }) => u.team === 'ally' && u.trait);
+    const speaker = allies[Math.floor(Math.random() * allies.length)];
+    if (speaker) say(speaker.i, traitLine(speaker.i, 'start'), true);
+    const boss = units.findIndex((u) => u.team === 'enemy' && u.boss && !u.dummy);
+    if (boss >= 0) setTimeout(() => say(boss, pickLine(ENEMY_LINES.boss), true), 900);
+  }
+
+  // Lignes de rayon (rebonds, tirs perforants) et mines posées au sol
+  function zap(ax: number, ay: number, bx: number, by: number): void {
+    const len = Math.hypot(bx - ax, by - ay);
+    const angle = Math.atan2(((by - ay) / ARENA_H) * arena.clientHeight, ((bx - ax) / ARENA_W) * arena.clientWidth);
+    const line = h('div', { class: 'zap', style: `${pos(ax, ay - 12)};width:${(len / ARENA_W) * 100}%;transform:rotate(${angle}rad)` });
+    line.style.zIndex = '998';
+    arena.appendChild(line);
+    setTimeout(() => line.remove(), 220 / speed);
+  }
+  const mineEls: { x: number; y: number; el: HTMLElement }[] = [];
+
   function applyEvents(frame: Frame): void {
     let shown = 0;
+    const killers = new Map<number, number>();
+    for (const ev of frame.e as BattleEvent[]) if (ev.t === 'hit') killers.set(ev.b, ev.a);
     for (const ev of frame.e as BattleEvent[]) {
+      if (ev.t === 'reveal') {
+        views[ev.i].el.classList.remove('stealthed');
+        floater(frame.p[ev.i * 3], frame.p[ev.i * 3 + 1], 'Repéré !', 'miss');
+        continue;
+      }
+      if (ev.t === 'zap') {
+        zap(frame.p[ev.a * 3], frame.p[ev.a * 3 + 1], frame.p[ev.b * 3], frame.p[ev.b * 3 + 1]);
+        continue;
+      }
+      if (ev.t === 'mine') {
+        const el = h('div', { class: 'mine', style: pos(ev.x, ev.y) });
+        arena.prepend(el);
+        mineEls.push({ x: ev.x, y: ev.y, el });
+        continue;
+      }
+      if (ev.t === 'boom') {
+        const k = mineEls.findIndex((m) => Math.abs(m.x - ev.x) < 1 && Math.abs(m.y - ev.y) < 1);
+        if (k >= 0) mineEls.splice(k, 1)[0].el.remove();
+        blast(ev.x, ev.y, ev.r);
+        continue;
+      }
+      if (ev.t === 'execute') {
+        floater(frame.p[ev.i * 3], frame.p[ev.i * 3 + 1], 'Exécuté !', 'crit dmg-enemy');
+        continue;
+      }
+      if (ev.t === 'die') {
+        if (units[ev.i].team === 'enemy') {
+          const killer = killers.get(ev.i);
+          if (killer !== undefined && units[killer].team === 'ally' && Math.random() < 0.35) say(killer, traitLine(killer, 'kill'));
+        } else {
+          const killer = killers.get(ev.i);
+          if (killer !== undefined && units[killer].boss && Math.random() < 0.5) say(killer, pickLine(ENEMY_LINES.kill));
+          const friends = units.map((_, i) => i).filter((i) => i !== ev.i && units[i].team === 'ally' && units[i].trait && frame.p[i * 3 + 2] > 0);
+          const friend = friends[Math.floor(Math.random() * friends.length)];
+          if (friend !== undefined && Math.random() < 0.6) say(friend, traitLine(friend, 'ally'));
+        }
+        continue;
+      }
+      if (ev.t === 'hit' && ev.crit && units[ev.b].team === 'ally' && Math.random() < 0.3) say(ev.b, traitLine(ev.b, 'hurt'));
       if (ev.t === 'hit') {
         const target = views[ev.b];
         target.el.classList.add('hurt');
@@ -110,6 +195,7 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
         floater(frame.p[ev.b * 3], frame.p[ev.b * 3 + 1], 'Raté', 'miss');
       } else if (ev.t === 'save') {
         floater(frame.p[ev.i * 3], frame.p[ev.i * 3 + 1], 'Dernier souffle !', 'save');
+        if (units[ev.i].team === 'ally') setTimeout(() => say(ev.i, traitLine(ev.i, 'hurt'), true), 300);
       }
     }
   }
@@ -215,6 +301,8 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
     if (finished) return;
     finished = true;
     controls.remove();
+    for (const v of views) v.el.classList.remove('stealthed');
+    for (const b of arena.querySelectorAll('.bubble')) b.remove();
     const action = replay && onReplay && { label: onReplay.label, run: replay };
     const panel = report ? resultPanel(report, close, action) : simulationPanel(units, result, close, action);
     overlay.appendChild(panel);
@@ -226,6 +314,7 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
   applyFrame(frames[0], true);
   idx = 1;
   timer = window.setTimeout(step, 600);
+  setTimeout(openingLines, 350);
 }
 
 function simulationPanel(units: BattleUnit[], result: BattleResult, close: () => void, replay?: ReplayAction): HTMLElement {
@@ -292,6 +381,90 @@ function resultActions(close: () => void, replay?: ReplayAction): HTMLElement {
   );
 }
 
+/** Améliorations gagnées pendant le combat, à choisir sans quitter l'écran de résultat. */
+function pendingPicks(ids: ReadonlySet<string>): HTMLElement | false {
+  const pending = () => getState().soldiers.filter((s) => ids.has(s.id) && s.picksLeft > 0 && s.upgradeChoices?.length);
+  if (pending().length === 0) return false;
+  const box = h('div', { class: 'result-picks' });
+  const draw = (): void => {
+    const st = getState();
+    const list = pending();
+    if (list.length === 0) {
+      box.replaceChildren(h('p', { class: 'note note-good small' }, '✓ Toutes les nouvelles améliorations sont choisies.'));
+      return;
+    }
+    box.replaceChildren(
+      h('h3', null, '⬆ Nouvelles améliorations'),
+      ...list.slice(0, 3).map((s) => {
+        const best = recommendedUpgrade(st, s);
+        return h(
+          'div',
+          { class: 'pick-row' },
+          h('b', { class: 'pick-name' }, `${s.name} · niv. ${s.level}`, s.picksLeft > 1 && h('small', { class: 'muted' }, ` (${s.picksLeft} à choisir)`)),
+          h(
+            'div',
+            { class: 'pick-choices' },
+            s.upgradeChoices!.map((uid) => {
+              const u = UPGRADES_BY_ID[uid];
+              return h(
+                'button',
+                { class: `pick-choice kind-${u.kind}${uid === best ? ' best' : ''}`, title: uid === best ? 'Conseillé pour son arme actuelle' : u.desc, onclick: () => { mutate((state) => pickUpgrade(state, s.id, uid)); draw(); } },
+                h('b', null, `${UPGRADE_KINDS[u.kind].icon} ${u.name}`, uid === best && h('span', { class: 'tag tag-accent' }, 'Conseillé')),
+                h('small', null, u.desc),
+              );
+            }),
+          ),
+        );
+      }),
+      ...(list.length > 3 ? [h('p', { class: 'muted small' }, `Et ${list.length - 3} autre${list.length - 3 > 1 ? 's' : ''} soldat${list.length - 3 > 1 ? 's' : ''} : voir l'onglet Escouade.`)] : []),
+    );
+  };
+  draw();
+  return box;
+}
+
+/** Bonus d'expédition à choisir avant la vague suivante. */
+export function boonPicker(onPick?: () => void): HTMLElement | false {
+  const run = getState().survival;
+  if (!run?.choices) return false;
+  const box = h('div', { class: 'boon-picker' });
+  const draw = (): void => {
+    const cur = getState().survival;
+    if (!cur?.choices) {
+      const last = cur?.boons.at(-1);
+      box.replaceChildren(h('p', { class: 'note note-good small' }, '✓ Bonus choisi', last ? ` : ${BOONS_BY_ID[last].icon} ${BOONS_BY_ID[last].name}` : '', '. En route pour la vague suivante !'));
+      return;
+    }
+    box.replaceChildren(
+      h('h3', null, '🎁 Choisissez un bonus pour la suite de l’expédition'),
+      h(
+        'div',
+        { class: 'boon-choices' },
+        cur.choices.map((id) => {
+          const b = BOONS_BY_ID[id];
+          return h(
+            'button',
+            {
+              class: 'boon',
+              onclick: () => {
+                const r = mutate((st) => pickBoon(st, id));
+                if (r.ok && r.merc) toast(`${r.merc.name} rejoint l'expédition !`, 'good');
+                draw();
+                onPick?.();
+              },
+            },
+            h('span', { class: 'boon-icon' }, b.icon),
+            h('b', null, b.name),
+            h('small', null, b.desc),
+          );
+        }),
+      ),
+    );
+  };
+  draw();
+  return box;
+}
+
 function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAction): HTMLElement {
   const title = report.colossus ? (report.colossus.killed ? 'Colosse abattu !' : 'Sacrifice accompli') : report.won ? 'Victoire !' : report.timeout ? 'Temps écoulé — défaite' : 'Défaite';
   const survivors = new Set(report.soldiers.filter((s) => !s.died).map((s) => s.id));
@@ -331,9 +504,14 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
         'p',
         { class: report.survival.ended ? 'muted' : 'levelup' },
         report.survival.ended
-          ? `Expédition terminée après ${report.survival.wave} vague${report.survival.wave > 1 ? 's' : ''} : la moitié du pot est versée.`
+          ? report.survival.halved
+            ? `Expédition terminée après ${report.survival.wave} vague${report.survival.wave > 1 ? 's' : ''} : la moitié du pot est versée.`
+            : `Vague ${report.survival.wave} remportée, mais plus aucun soldat debout : les mercenaires rapportent tout le pot.`
           : `Vague ${report.survival.wave} remportée ! Pot : ${fmt(report.survival.pot)} or. Continuez, ou encaissez depuis l'onglet Combat.`,
       ),
+    report.survival && !report.survival.ended && boonPicker(),
+    report.tower &&
+      h('p', { class: report.won ? 'levelup' : 'muted' }, report.won ? `Étage ${report.tower.floor} de la Tour franchi ! Record : étage ${report.tower.best}.` : `L'étage ${report.tower.floor} résiste : aucun soldat n'est perdu dans la Tour, retentez votre chance.`),
     h(
       'div',
       { class: 'result-rewards' },
@@ -354,7 +532,7 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
         h('ul', null, report.unlocked.map((u) => h('li', null, h('b', null, u.label), ` : ${u.desc}`))),
       ),
     notable.length > 0 && h('ul', { class: 'result-list' }, notable.map(row)),
-    picks > 0 && h('p', { class: 'note note-accent result-hint' }, `⬆ ${picks} soldat${picks > 1 ? 's ont' : ' a'} de nouvelles améliorations à choisir (onglet Escouade).`),
+    picks > 0 && pendingPicks(survivors),
     resultActions(close, replay),
     fold('result-details', 'Détail du combat', [h('ul', { class: 'result-list' }, report.soldiers.map(row)), h('div', { class: 'table-scroll' }, details)]),
   );

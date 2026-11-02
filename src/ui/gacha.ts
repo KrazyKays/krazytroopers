@@ -14,6 +14,8 @@ export interface GachaItem {
 export interface GachaOpts {
   kind: 'soldier' | 'weapon';
   title: string;
+  /** Bandeau affiché sous le titre (premier tirage garanti…). */
+  subtitle?: string;
   items: GachaItem[];
   /** Boutons affichés une fois toutes les cartes révélées. */
   actions: (close: () => void) => HTMLElement[];
@@ -72,7 +74,7 @@ export function playGacha(o: GachaOpts): void {
   const stageEl = h('div', { class: 'gacha-stage' });
   const footer = h('div', { class: 'gacha-footer' });
   const muteBtn = h('button', { class: 'gacha-mute', title: 'Activer / couper le son', onclick: () => { toggleMute(); muteBtn.textContent = isMuted() ? '🔇' : '🔊'; } }, isMuted() ? '🔇' : '🔊');
-  overlay.append(h('div', { class: 'gacha-bg' }), muteBtn, h('h2', { class: 'gacha-title' }, o.title), stageEl, footer);
+  overlay.append(h('div', { class: 'gacha-bg' }), muteBtn, h('h2', { class: 'gacha-title' }, o.title), ...(o.subtitle ? [h('p', { class: 'gacha-subtitle' }, o.subtitle)] : []), stageEl, footer);
 
   const close = () => {
     clearTimers();
@@ -107,7 +109,7 @@ export function playGacha(o: GachaOpts): void {
     overlay.appendChild(flash);
     setTimeout(() => flash.remove(), 700);
     sparks(overlay, RARITIES[best].color, 30 + rank(best) * 20, 260 + rank(best) * 80, crate);
-    if (best === 'legendary') shake();
+    if (rank(best) >= rank('legendary')) shake();
     showCards();
   }
 
@@ -138,7 +140,7 @@ export function playGacha(o: GachaOpts): void {
     if (rank(r) >= rank('epic') && !calm) {
       cards[i].classList.add('charging');
       sfx.charge();
-      later(r === 'legendary' ? 1000 : 650, () => {
+      later(rank(r) >= rank('legendary') ? 1000 : 650, () => {
         flip(i);
         later(450, nextFlip);
       });
@@ -159,8 +161,8 @@ export function playGacha(o: GachaOpts): void {
       sfx.flip();
       later(120, () => sfx.reveal(r));
     }
-    if (rank(r) >= rank('rare')) later(150, () => sparks(overlay, RARITIES[r].color, [0, 10, 28, 60][rank(r)], [0, 90, 160, 260][rank(r)], card));
-    if (r === 'legendary' && !quiet) later(150, shake);
+    if (rank(r) >= rank('rare')) later(150, () => sparks(overlay, RARITIES[r].color, [0, 10, 28, 60, 90][rank(r)], [0, 90, 160, 260, 340][rank(r)], card));
+    if (rank(r) >= rank('legendary') && !quiet) later(150, shake);
     if (flipped.every(Boolean)) finish();
   }
 

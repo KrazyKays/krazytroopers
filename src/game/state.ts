@@ -1,5 +1,6 @@
 ﻿import { MAX_LEVEL, STAR_CHEST_EVERY, START_FREE_PULLS, START_GOLD, START_LOOT, START_WEAPONS, TRAINING_PER_SOLDIER } from './data';
 import { grantLevelPicks } from './upgrades';
+import { TRAITS_BY_ID, traitFor } from './traits';
 import type { GameState, Soldier } from './types';
 
 const SAVE_KEY = 'krazy-troopers-save-v1';
@@ -29,6 +30,7 @@ export function createInitialState(): GameState {
     starChests: 0,
     claimedGoals: [],
     lootMeter: START_LOOT,
+    towerFloor: 0,
   };
   for (const defId of START_WEAPONS) st.weapons.push({ uid: `w${st.nextId++}`, defId });
   return st;
@@ -71,13 +73,14 @@ export function parseSave(raw: string): GameState | null {
           weaponPity: typeof data.weaponPity === 'number' ? data.weaponPity : 0,
           lastDaily: typeof data.lastDaily === 'string' ? data.lastDaily : null,
           dailyStreak: typeof data.dailyStreak === 'number' ? data.dailyStreak : 0,
-          survival: data.survival ?? null,
           bestWave: typeof data.bestWave === 'number' ? data.bestWave : 0,
           colossus: data.colossus ?? { rank: 1, damage: 0 },
           tactic: data.tactic ?? 'balanced',
           ...starsOf(data),
           claimedGoals: Array.isArray(data.claimedGoals) ? data.claimedGoals : [],
           lootMeter: typeof data.lootMeter === 'number' ? data.lootMeter : START_LOOT,
+          towerFloor: typeof data.towerFloor === 'number' ? data.towerFloor : 0,
+          survival: data.survival ? { ...data.survival, boons: data.survival.boons ?? [], choices: data.survival.choices ?? null, mercs: data.survival.mercs ?? [] } : null,
           // Sauvegardes antérieures au compteur global : on reprend les éliminations encore connues des soldats.
           stats: {
             ...data.stats,
@@ -92,6 +95,7 @@ export function parseSave(raw: string): GameState | null {
               trainingsLeft: s.trainingsLeft ?? TRAINING_PER_SOLDIER,
               legions: s.legions ?? (titles.includes('legion') ? 1 : 0),
               position: s.position ?? 'free',
+              trait: s.trait && TRAITS_BY_ID[s.trait] ? s.trait : traitFor(s.id, s.name),
             };
             // les paliers d'amélioration ont changé : on recale les choix en attente, sans rien retirer
             grantLevelPicks(soldier);
