@@ -1,13 +1,15 @@
 import { DT, simulate, type BattleResult, type BattleUnit } from './battle';
-import { BOSS_FREE_PULLS, LOOT_FIRST_CLEAR, LOOT_METER_MAX, LOOT_REPLAY, MAX_LEVEL, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, type UnlockDef } from './data';
+import { BOSS_FREE_PULLS, COLOSSUS_PULLS, DAILY_PULL_EVERY, LOOT_FIRST_CLEAR, PITY_LIMIT, RARITY_ORDER, LOOT_METER_MAX, LOOT_REPLAY, MAX_LEVEL, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, type UnlockDef } from './data';
 import { grantLevelPicks } from './upgrades';
 import { activeTactic, applySquadBonuses, synergyStatus } from './squad';
 import {
   buildCampaignEnemies,
+  buildColossus,
   buildDailyEnemies,
   buildSimulationEnemies,
   buildSurvivalEnemies,
   buildTrainingEnemies,
+  colossusMaxHp,
   dailyKey,
   dailyLevel,
   dailyModifier,
@@ -24,7 +26,7 @@ import { nextUid } from './state';
 import { mulberry32, randomSeed, type Rng } from './rng';
 import type { GameState, Soldier, WeaponDef } from './types';
 
-export type BattleMode = 'training' | 'campaign' | 'daily' | 'survival';
+export type BattleMode = 'training' | 'campaign' | 'daily' | 'survival' | 'fodder';
 
 export type BattleRequest =
   | { mode: 'training'; squad: string[] }
@@ -47,6 +49,7 @@ export interface SoldierReport {
   dealt: number;
   taken: number;
   healed: number;
+  healGiven: number;
 }
 
 export interface SurvivalReport {
@@ -55,6 +58,20 @@ export interface SurvivalReport {
   pot: number;
   /** L'expédition est terminée (escouade vaincue) : la moitié du pot a été versée. */
   ended: boolean;
+}
+
+export interface ColossusReport {
+  rank: number;
+  /** Dégâts infligés par ce sacrifice. */
+  dealt: number;
+  /** PV restants du Colosse, sur `maxHp`. */
+  left: number;
+  maxHp: number;
+  killed: boolean;
+  /** Crans gagnés sur la garantie de recrutement. */
+  pity: number;
+  /** Armes perdues avec les soldats sacrifiés. */
+  weaponsLost: number;
 }
 
 export interface BattleReport {
@@ -72,6 +89,7 @@ export interface BattleReport {
   unlocked: UnlockDef[];
   daily?: { modifier: DailyModifier; streak: number };
   survival?: SurvivalReport;
+  colossus?: ColossusReport;
   /** Or payé au lancement pour les soldats sans entraînement gratuit. */
   trainingFee?: number;
   /** Campagne gagnée : étoiles obtenues, nouvelles étoiles (au-delà du record) et coffres ouverts. */
@@ -309,12 +327,12 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
     const levelsGained = addXp(s, gained);
     grantLevelPicks(s);
     const kills = result.kills[s.id] ?? 0;
-    const { dealt, taken, healed } = result.totals[s.id];
+    const { dealt, taken, healed, healGiven } = result.totals[s.id];
     s.kills += kills;
     st.stats.kills += kills;
     if (req.mode === 'training' && s.trainingsLeft > 0) s.trainingsLeft--;
     if (died) st.stats.deaths++;
-    return { id: s.id, name: s.name, xpGained: gained, levelsGained, newLevel: s.level, died, wounded: fell && !died, kills, dealt, taken, healed };
+    return { id: s.id, name: s.name, xpGained: gained, levelsGained, newLevel: s.level, died, wounded: fell && !died, kills, dealt, taken, healed, healGiven };
   });
   const dead = new Set(soldiers.filter((s) => s.died).map((s) => s.id));
   st.soldiers = st.soldiers.filter((s) => !dead.has(s.id));
@@ -367,7 +385,7 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
     report.daily = { modifier: dailyModifier(dayKey), streak };
     if (won) {
       report.gold = dailyGold(level!, streak);
-      report.freePulls = 1;
+      report.freePulls = streak % DAILY_PULL_EVERY === 0 ? 1 : 0;
       grantWeapon(rollWeaponDrop(level!, true));
     }
   } else {
@@ -378,6 +396,64 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   st.gold += report.gold;
   st.freePulls += report.freePulls;
 
+  return { ok: true, units, result, report };
+}
+
+/** Crans de garantie de recrutement rapportés par un soldat sacrifié, selon sa rareté. */
+export function sacrificePity(s: Soldier): number {
+  return RARITY_ORDER.indexOf(s.rarity) + 1;
+}
+
+/** Un soldat ne peut être sacrifié ni s'il est favori, ni s'il est engagé dans une expédition de survie. */
+export function canSacrifice(st: GameState, s: Soldier): boolean {
+  return !s.favorite && !st.survival?.squad.includes(s.id);
+}
+
+/**
+ * Chair à canon : tous les soldats engagés sont perdus avec leur arme, quoi qu'il arrive. Sans cela, une escouade solide
+ * tuerait le Colosse sans risque, et ses récompenses deviendraient gratuites.
+ */
+export function launchFodder(st: GameState, squadIds: string[], seed: number = randomSeed()): BattleLaunch {
+  if (!isUnlocked(st, 'fodder')) return { ok: false, error: `Ce mode se débloque au niveau ${unlockLevel('fodder')} de la campagne.` };
+  const squad = resolveSquad(st, squadIds);
+  if (typeof squad === 'string') return { ok: false, error: squad };
+  const kept = squad.find((s) => !canSacrifice(st, s));
+  if (kept) return { ok: false, error: `${kept.name} ne peut pas être sacrifié (favori ou en expédition).` };
+
+  const { rank, damage } = st.colossus;
+  const maxHp = colossusMaxHp(rank);
+  const hpBefore = maxHp - damage;
+  const units = [...allyUnits(st, squad), buildColossus(rank, hpBefore)];
+  const result = simulate(units, seed);
+  const killed = result.winner === 'ally';
+  const dealt = Math.min(hpBefore, result.totals.colossus.taken);
+
+  const soldiers: SoldierReport[] = squad.map((s) => {
+    const kills = result.kills[s.id] ?? 0;
+    const { dealt: done, taken, healed, healGiven } = result.totals[s.id];
+    s.kills += kills;
+    st.stats.kills += kills;
+    st.stats.deaths++;
+    return { id: s.id, name: s.name, xpGained: 0, levelsGained: 0, newLevel: s.level, died: true, wounded: false, kills, dealt: done, taken, healed, healGiven };
+  });
+  st.soldiers = st.soldiers.filter((s) => !squad.includes(s));
+  const lost = new Set(squad.map((s) => s.weaponUid));
+  const weaponsBefore = st.weapons.length;
+  st.weapons = st.weapons.filter((w) => !lost.has(w.uid));
+
+  const pityBefore = st.pity;
+  st.pity = Math.min(PITY_LIMIT - 1, st.pity + squad.reduce((n, s) => n + sacrificePity(s), 0));
+  const report: BattleReport = { mode: 'fodder', level: null, won: killed, timeout: result.winner === 'timeout', firstClear: false, gold: 0, weapon: null, soldiers, freePulls: 0, unlocked: [] };
+  if (killed) {
+    st.stats.won++;
+    st.colossus = { rank: rank + 1, damage: 0 };
+    st.pity = PITY_LIMIT - 1;
+    report.freePulls = COLOSSUS_PULLS;
+    st.freePulls += COLOSSUS_PULLS;
+  } else {
+    st.colossus.damage = damage + dealt;
+  }
+  report.colossus = { rank, dealt, left: killed ? 0 : hpBefore - dealt, maxHp, killed, pity: st.pity - pityBefore, weaponsLost: weaponsBefore - st.weapons.length };
   return { ok: true, units, result, report };
 }
 

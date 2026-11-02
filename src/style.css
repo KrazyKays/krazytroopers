@@ -215,6 +215,10 @@ input[type='checkbox'] {
   text-align: center;
 }
 
+.nav-short {
+  display: none;
+}
+
 .nav-item .badge {
   margin-left: auto;
 }
@@ -2165,6 +2169,11 @@ input[type='checkbox'] {
   margin-top: 0.3rem;
 }
 
+.table-scroll {
+  width: 100%;
+  overflow-x: auto;
+}
+
 .stats-table {
   width: 100%;
   border-collapse: collapse;
@@ -2795,11 +2804,46 @@ input[type='checkbox'] {
   flex: 1;
 }
 
-/* ---------- Infos ---------- */
+/* ---------- Wiki ---------- */
 
-.rules-details summary {
+.wiki-search {
+  width: 100%;
+  margin-top: 0.4rem;
+}
+
+.wiki-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+}
+
+.wiki-article + .wiki-article {
+  margin-top: 0.5rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid var(--line);
+}
+
+.wiki-article summary {
   font-weight: 700;
   cursor: pointer;
+}
+
+.wiki-body {
+  margin-top: 0.4rem;
+}
+
+.wiki-body .unlock-list li {
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+
+.wiki-body .unlock-list li > .small {
+  grid-column: 2;
+}
+
+.wiki-table {
+  margin-top: 0.5rem;
+  overflow-x: auto;
 }
 
 .rules {
@@ -3386,9 +3430,18 @@ input[type='checkbox'] {
     flex: 1;
     flex-direction: column;
     gap: 0.1rem;
+    min-width: 0;
     padding: 0.4rem 0.1rem;
     font-size: 0.66rem;
     text-align: center;
+  }
+
+  .nav-label.has-short {
+    display: none;
+  }
+
+  .nav-short {
+    display: inline;
   }
 
   .nav-item .badge {

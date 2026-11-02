@@ -64,6 +64,8 @@ export interface GameState {
   survival: SurvivalRun | null;
   /** Meilleure vague atteinte en survie. */
   bestWave: number;
+  /** Chair à canon : rang du Colosse et dégâts déjà encaissés, conservés d'un sacrifice à l'autre. */
+  colossus: { rank: number; damage: number };
   /** Tactique d'escouade appliquée aux combats. */
   tactic: TacticId;
   /** Meilleur nombre d'étoiles (1 à 3) obtenu sur chaque niveau de campagne. */

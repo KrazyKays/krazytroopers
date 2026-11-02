@@ -41,7 +41,7 @@ export const LOOT_REPLAY = 1;
 /** La jauge démarre à moitié pleine : le premier niveau de campagne offre déjà une arme. */
 export const START_LOOT = 2;
 
-export type UnlockId = 'tactics' | 'squad4' | 'armory' | 'simulation' | 'daily' | 'squad5' | 'autopick' | 'forge' | 'survival' | 'bulk' | 'squad6';
+export type UnlockId = 'tactics' | 'squad4' | 'armory' | 'simulation' | 'daily' | 'squad5' | 'autopick' | 'forge' | 'survival' | 'bulk' | 'squad6' | 'fodder';
 
 export interface UnlockDef {
   id: UnlockId;
@@ -57,6 +57,7 @@ export const UNLOCKS: UnlockDef[] = [
   { id: 'squad4', level: 3, label: "4e place d'escouade", desc: "Engagez jusqu'à 4 soldats par combat." },
   { id: 'armory', level: 4, label: 'Armurerie', desc: "Achetez des armes au hasard dans l'onglet Recrutement." },
   { id: 'simulation', level: 5, label: 'Simulation', desc: 'Testez votre escouade sans risque face aux adversaires de votre choix.' },
+  { id: 'fodder', level: 6, label: 'Chair à canon', desc: 'Sacrifiez les soldats dont vous ne voulez plus contre le Colosse : la garantie de recrutement avance, et sa mort rapporte gros.' },
   { id: 'daily', level: 7, label: 'Défi du jour', desc: 'Un combat unique chaque jour, avec une règle spéciale et de grosses récompenses.' },
   { id: 'squad5', level: 8, label: "5e place d'escouade", desc: "Engagez jusqu'à 5 soldats par combat." },
   { id: 'autopick', level: 10, label: 'Choix automatique', desc: "Laissez l'état-major choisir les améliorations conseillées de toute l'escouade en un clic." },
@@ -74,7 +75,15 @@ export const FORGE_INPUT = 3;
 export const FORGE_FEE: Record<Exclude<Rarity, 'legendary'>, number> = { common: 20, rare: 60, epic: 150 };
 
 /** Étoiles de campagne : un coffre (tirage gratuit) toutes les STAR_CHEST_EVERY étoiles. */
-export const STAR_CHEST_EVERY = 12;
+export const STAR_CHEST_EVERY = 18;
+
+/** Défi du jour : un tirage gratuit toutes les DAILY_PULL_EVERY victoires consécutives. */
+export const DAILY_PULL_EVERY = 3;
+
+/** Chair à canon : PV du Colosse au rang 1, hausse par rang, et récompense de sa mort. */
+export const COLOSSUS_HP = 1200;
+export const COLOSSUS_HP_PER_RANK = 0.3;
+export const COLOSSUS_PULLS = 2;
 
 /** Survie : part des PV max regagnée entre deux vagues. */
 export const SURVIVAL_REST_HEAL = 0.25;

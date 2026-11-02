@@ -1,7 +1,8 @@
-﻿import { LOOT_FIRST_CLEAR, LOOT_METER_MAX, LOOT_REPLAY, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, TRAINING_PER_SOLDIER, type UnlockId } from '../game/data';
+﻿import { COLOSSUS_PULLS, DAILY_PULL_EVERY, LOOT_FIRST_CLEAR, PITY_LIMIT, RARITIES, RARITY_ORDER, LOOT_METER_MAX, LOOT_REPLAY, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, TRAINING_PER_SOLDIER, type UnlockId } from '../game/data';
 import {
   campaignGold,
   campaignXp,
+  canSacrifice,
   canTrain,
   cashOutSurvival,
   dailyDone,
@@ -11,6 +12,7 @@ import {
   estimateSimulation,
   ESTIMATE_RUNS,
   launchBattle,
+  launchFodder,
   launchSimulation,
   squadStats,
   starGold,
@@ -24,6 +26,7 @@ import {
 } from '../game/combat';
 import {
   buildDailyEnemies,
+  colossusMaxHp,
   dailyKey,
   dailyLevel,
   dailyModifier,
@@ -50,26 +53,33 @@ import { confirmDialog, fmt, getSquadSort, progressBar, soldierSprite, squadTool
 import { goTo } from './nav';
 import { openSoldier } from './roster';
 
-export type CombatMode = 'training' | 'campaign' | 'daily' | 'survival' | 'simulation';
+export type CombatMode = 'training' | 'campaign' | 'daily' | 'survival' | 'fodder' | 'simulation';
 
 let mode: CombatMode = 'campaign';
 
 /** Modes soumis à un seuil de campagne. */
-const MODE_UNLOCK: Partial<Record<CombatMode, UnlockId>> = { daily: 'daily', survival: 'survival', simulation: 'simulation' };
+const MODE_UNLOCK: Partial<Record<CombatMode, UnlockId>> = { daily: 'daily', survival: 'survival', fodder: 'fodder', simulation: 'simulation' };
 
 const MODES: { id: CombatMode; icon: string; label: string }[] = [
   { id: 'campaign', icon: '🚩', label: 'Campagne' },
   { id: 'daily', icon: '📅', label: 'Défi du jour' },
   { id: 'survival', icon: '🔥', label: 'Survie' },
+  { id: 'fodder', icon: '💣', label: 'Chair à canon' },
   { id: 'training', icon: '🎯', label: 'Entraînement' },
   { id: 'simulation', icon: '🧪', label: 'Simulation' },
 ];
 
 /** Ouvre l'onglet Combat sur un mode donné (utilisé par le QG et le guide). */
 export function openCombat(m: CombatMode): void {
-  mode = m;
+  setMode(m);
   if (m === 'campaign') campaignPick = null;
   goTo('combat');
+}
+
+// La sélection ne traverse jamais la frontière de Chair à canon : on ne sacrifie pas par mégarde l'escouade du combat précédent
+function setMode(m: CombatMode): void {
+  if (m !== mode && (m === 'fodder' || mode === 'fodder')) selected.clear();
+  mode = m;
 }
 
 // Estimation d'un vrai combat : recalculée seulement si l'escouade, ses stats ou l'adversaire changent
@@ -153,11 +163,16 @@ const simKey = (): string => JSON.stringify([sim, [...selected].sort(), getState
 const simMaxLevel = (st: GameState): number => Math.max(10, st.campaignLevel + 10);
 
 function eligible(s: Soldier): boolean {
+  if (mode === 'fodder') return canSacrifice(getState(), s);
   return mode !== 'training' || canTrain(s);
 }
 
+const ineligibleReason = (s: Soldier): string => (mode === 'fodder' ? `${s.name} est protégé : favori ou engagé dans une expédition.` : `${s.name} est au niveau maximum et n'a plus d'entraînement gratuit.`);
+
 // La sélection auto ne dépense jamais d'or : un entraînement payant se choisit à la main
 function autoEligible(s: Soldier): boolean {
+  // Un soldat Épique ou mieux ne se sacrifie jamais par un simple clic sur « Auto »
+  if (mode === 'fodder') return eligible(s) && RARITY_ORDER.indexOf(s.rarity) < RARITY_ORDER.indexOf('epic');
   return mode !== 'training' || s.trainingsLeft > 0;
 }
 
@@ -183,12 +198,14 @@ function pruneSelection(st: GameState): void {
 function autoSelect(st: GameState): void {
   selected.clear();
   const ready = st.soldiers.filter(autoEligible);
-  for (const s of sortSquad(st, getSquadSort(), ready).slice(0, squadMax(st))) selected.add(s.id);
+  // Chair à canon : les soldats les moins précieux d'abord, quel que soit le tri affiché
+  const sorted = mode === 'fodder' ? ready.sort((a, b) => RARITY_ORDER.indexOf(a.rarity) - RARITY_ORDER.indexOf(b.rarity) || a.level - b.level) : sortSquad(st, getSquadSort(), ready);
+  for (const s of sorted.slice(0, squadMax(st))) selected.add(s.id);
 }
 
 function toggleSoldier(st: GameState, s: Soldier): void {
   if (!eligible(s)) {
-    toast(`${s.name} est au niveau maximum et n'a plus d'entraînement gratuit.`, 'bad');
+    toast(ineligibleReason(s), 'bad');
     return;
   }
   const max = squadMax(st);
@@ -198,7 +215,7 @@ function toggleSoldier(st: GameState, s: Soldier): void {
   refresh();
 }
 
-const TITLES: Record<Exclude<CombatMode, 'simulation' | 'campaign'>, string> = { training: 'Entraînement', daily: 'Défi du jour', survival: 'Survie' };
+const TITLES: Record<Exclude<CombatMode, 'simulation' | 'campaign' | 'fodder'>, string> = { training: 'Entraînement', daily: 'Défi du jour', survival: 'Survie' };
 
 function launch(): void {
   const st = getState();
@@ -213,6 +230,10 @@ function launch(): void {
     return;
   }
   const squad = [...selected];
+  if (mode === 'fodder') {
+    void sacrifice(squad);
+    return;
+  }
   if (mode === 'simulation') {
     // aucune conséquence : la sélection reste en place pour relancer tout de suite
     const run = launchSimulation(st, squad, sim);
@@ -252,6 +273,20 @@ function launchFight(st: GameState, level: number): void {
   }
   // l'état est déjà enregistré : on rafraîchit simplement l'écran
   openBattle(title, res.units, res.result, res.report, () => refresh(), replay);
+}
+
+async function sacrifice(squad: string[]): Promise<void> {
+  const names = squad.map((id) => getState().soldiers.find((s) => s.id === id)).map((s) => s && `${s.name} (${RARITIES[s.rarity].label}, niv. ${s.level}, ${s.weaponUid ? weaponForSoldier(s, getState().weapons).name : 'mains nues'})`).join(', ');
+  const ok = await confirmDialog({ title: `Sacrifier ${squad.length} soldat${squad.length > 1 ? 's' : ''} ?`, body: `${names} : aucun ne reviendra, quoi qu'il arrive, et leurs armes seront perdues avec eux.`, confirm: 'Sacrifier', danger: true });
+  if (!ok) return;
+  const rank = getState().colossus.rank;
+  const res = mutate((state) => launchFodder(state, squad));
+  if (!res.ok) {
+    toast(res.error, 'bad');
+    return;
+  }
+  pruneSelection(getState());
+  openBattle(`Chair à canon — Colosse, rang ${rank}`, res.units, res.result, res.report, () => refresh());
 }
 
 async function cashOut(): Promise<void> {
@@ -389,8 +424,8 @@ function dailyInfo(st: GameState): HTMLElement {
     enemyChips(prev),
     done
       ? h('p', { class: 'note note-good' }, `Défi déjà tenté. Revenez demain${st.dailyStreak > 0 ? ` pour prolonger votre série (${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''})` : ''} !`)
-      : rewards(`🪙 ${fmt(dailyGold(level, streakNext))} or`, '🎟️ 1 tirage', '🔫 arme de boss', `✨ ${fmt(campaignXp(level))} XP`),
-    h('p', { class: 'muted small' }, `Une seule tentative par jour. Série : ${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''} (+20 or par jour consécutif, jusqu'à 7). Une défaite remet la série à zéro et les soldats tombés meurent.`),
+      : rewards(`🪙 ${fmt(dailyGold(level, streakNext))} or`, streakNext % DAILY_PULL_EVERY === 0 && '🎟️ 1 tirage', '🔫 arme de boss', `✨ ${fmt(campaignXp(level))} XP`),
+    h('p', { class: 'muted small' }, `Une seule tentative par jour. Série : ${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''} (+20 or par jour consécutif, jusqu'à 7 ; 1 tirage gratuit toutes les ${DAILY_PULL_EVERY} victoires d'affilée). Une défaite remet la série à zéro et les soldats tombés meurent.`),
   );
 }
 
@@ -424,6 +459,20 @@ function survivalInfo(st: GameState): HTMLElement {
       }),
     ),
     h('button', { class: 'btn btn-primary', onclick: () => void cashOut() }, `Encaisser ${fmt(run.pot)} or et rentrer`),
+  );
+}
+
+function fodderInfo(st: GameState): HTMLElement {
+  const { rank, damage } = st.colossus;
+  const max = colossusMaxHp(rank);
+  return brief(
+    '💣',
+    `Le Colosse, rang ${rank}`,
+    h('p', null, 'Envoyez les soldats dont vous ne voulez plus contre le Colosse. Ses blessures restent d’un sacrifice à l’autre : il finira par tomber.'),
+    progressBar((max - damage) / max, `${fmt(max - damage)} / ${fmt(max)} PV`, 'progress-bad'),
+    rewards(`🎯 Par soldat : garantie de recrutement +1 à +${RARITY_ORDER.length}, selon sa rareté`, `🎟️ À sa mort : ${COLOSSUS_PULLS} tirages`, '★ À sa mort : prochaine recrue Épique ou mieux'),
+    h('p', { class: 'muted small' }, `Garantie actuelle : ${st.pity} / ${PITY_LIMIT - 1}. Une bonne arme fait plus de dégâts, mais elle est perdue avec le soldat : déséquipez celles que vous voulez garder.`),
+    h('p', { class: 'note note-warn' }, 'Aucun soldat engagé ne revient, même en cas de victoire, et son arme est perdue. Ni or ni XP. Les favoris sont protégés.'),
   );
 }
 
@@ -552,11 +601,12 @@ export function renderCombat(): HTMLElement {
         : m.id === 'campaign' ? `Niveau ${nextLevel}`
         : m.id === 'daily' ? (dailyDone(st) ? 'Fait' : 'Disponible')
         : m.id === 'survival' ? (st.survival ? `Vague ${st.survival.wave + 1}` : `Record ${st.bestWave}`)
+        : m.id === 'fodder' ? `Rang ${st.colossus.rank}`
         : m.id === 'training' ? 'Sans risque'
         : 'Sans conséquence';
       return h(
         'button',
-        { class: `mode-tab${mode === m.id ? ' active' : ''}${isLocked ? ' locked' : ''}`, onclick: () => { mode = m.id; refresh(); } },
+        { class: `mode-tab${mode === m.id ? ' active' : ''}${isLocked ? ' locked' : ''}`, onclick: () => { setMode(m.id); refresh(); } },
         h('span', { class: 'mode-icon' }, isLocked ? '🔒' : m.icon),
         h('span', { class: 'mode-text' }, h('b', null, m.label), h('small', null, status)),
         m.id === 'daily' && dailyReady && h('span', { class: 'badge' }, '!'),
@@ -566,13 +616,15 @@ export function renderCombat(): HTMLElement {
 
   const lockId = locked(st);
   const info =
-    lockId === 'daily' ? lockedInfo(lockId, '📅', 'Défi du jour', 'Un combat unique par jour, avec une règle spéciale (horde, commando d’élite, deux boss…) et de grosses récompenses : or, tirage gratuit et arme de boss.')
+    lockId === 'daily' ? lockedInfo(lockId, '📅', 'Défi du jour', 'Un combat unique par jour, avec une règle spéciale (horde, commando d’élite, deux boss…) et de grosses récompenses : or et arme de boss.')
     : lockId === 'survival' ? lockedInfo(lockId, '🔥', 'Survie', 'Enchaînez les vagues avec les mêmes soldats, sans soin complet entre deux vagues : encaissez vos gains ou risquez tout.')
+    : lockId === 'fodder' ? lockedInfo(lockId, '💣', 'Chair à canon', 'Sacrifiez les soldats dont vous ne voulez plus contre un Colosse increvable, pour faire avancer la garantie de recrutement et gagner des tirages à sa mort.')
     : lockId === 'simulation' ? lockedInfo(lockId, '🧪', 'Simulation', 'Testez votre escouade sans aucun risque face aux adversaires de votre choix, et estimez ses chances.')
     : mode === 'training' ? trainingInfo(st)
     : mode === 'simulation' ? simulationInfo(st)
     : mode === 'daily' ? dailyInfo(st)
     : mode === 'survival' ? survivalInfo(st)
+    : mode === 'fodder' ? fodderInfo(st)
     : campaignInfo(st, level);
 
   const runActive = mode === 'survival' && !!st.survival;
@@ -597,7 +649,7 @@ export function renderCombat(): HTMLElement {
           h(
             'div',
             { class: 'row' },
-            h('button', { class: 'btn btn-small', onclick: () => { autoSelect(st); refresh(); }, title: 'Prendre les meilleurs soldats selon le tri choisi' }, '✨ Auto'),
+            h('button', { class: 'btn btn-small', onclick: () => { autoSelect(st); refresh(); }, title: mode === 'fodder' ? 'Prendre les soldats les moins précieux (jamais Épique ou mieux)' : 'Prendre les meilleurs soldats selon le tri choisi' }, '✨ Auto'),
             h('button', { class: 'btn btn-small btn-ghost', disabled: selected.size === 0, onclick: () => { selected.clear(); refresh(); } }, 'Vider'),
           ),
       ),
@@ -628,7 +680,7 @@ export function renderCombat(): HTMLElement {
             squadView(st, (s) => ({
               selected: selected.has(s.id),
               disabled: !eligible(s),
-              disabledReason: `${s.name} est au niveau maximum et n'a plus d'entraînement gratuit.`,
+              disabledReason: ineligibleReason(s),
               cost: paidTraining(s) ? { text: `🎯 ${fmt(trainingCost(s))} or`, title: `Entraînements gratuits épuisés : engager ${s.name} coûte ${fmt(trainingCost(s))} or, payés au lancement.` } : undefined,
               onclick: () => toggleSoldier(st, s),
             })),
@@ -642,6 +694,7 @@ export function renderCombat(): HTMLElement {
   const label =
     mode === 'training' ? `Lancer l'entraînement${feeLabel(fee)}`
     : mode === 'simulation' ? 'Lancer la simulation'
+    : mode === 'fodder' ? `Sacrifier ${selected.size} soldat${selected.size > 1 ? 's' : ''}`
     : mode === 'daily' ? 'Relever le défi'
     : mode === 'survival' ? (st.survival ? `Lancer la vague ${st.survival.wave + 1}` : 'Partir en expédition')
     : `Lancer le niveau ${level}`;
@@ -655,7 +708,7 @@ export function renderCombat(): HTMLElement {
     : 'Sélectionnez au moins un soldat',
   );
   const quickPick = !canLaunch && !blocked && !broke && !runActive && st.soldiers.some(autoEligible) && h('button', { class: 'btn btn-big', onclick: () => { autoSelect(st); refresh(); } }, '✨ Sélection auto');
-  const est = canLaunch && mode !== 'simulation' ? currentBattleEstimate(st, battleRequest(st, level)) : null;
+  const est = canLaunch && mode !== 'simulation' && mode !== 'fodder' ? currentBattleEstimate(st, battleRequest(st, level)) : null;
 
   return h(
     'section',
@@ -663,6 +716,6 @@ export function renderCombat(): HTMLElement {
     tabs,
     h('div', { class: 'combat-cols' }, info, prep),
     picker,
-    !lockId && h('div', { class: 'launch-bar' }, est ? estimateLine(est) : h('span', { class: 'muted small' }, mode === 'simulation' ? 'Simulation : aucune perte réelle.' : 'Sélectionnez votre escouade pour voir vos chances.'), h('div', { class: 'launch-buttons' }, quickPick, launchBtn)),
+    !lockId && h('div', { class: 'launch-bar' }, est ? estimateLine(est) : h('span', { class: 'muted small' }, mode === 'simulation' ? 'Simulation : aucune perte réelle.' : mode === 'fodder' ? 'Aucun soldat engagé ne reviendra, ni son arme.' : 'Sélectionnez votre escouade pour voir vos chances.'), h('div', { class: 'launch-buttons' }, quickPick, launchBtn)),
   );
 }

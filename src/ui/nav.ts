@@ -1,4 +1,4 @@
-export type Tab = 'home' | 'roster' | 'recruit' | 'combat' | 'arsenal' | 'settings';
+export type Tab = 'home' | 'roster' | 'recruit' | 'combat' | 'arsenal' | 'wiki' | 'settings';
 
 let current: Tab = 'home';
 let onChange: () => void = () => {};

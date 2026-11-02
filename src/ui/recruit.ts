@@ -107,7 +107,7 @@ function barracksPanel(cap: number, count: number): HTMLElement {
       'small',
       { class: 'muted' },
       next ? `S'agrandit à ${next.cap} places au niveau ${next.level} de la campagne.` : 'Caserne à sa taille maximale.',
-      full && ' Renvoyez un soldat pour faire de la place.',
+      full && (isUnlocked(st, 'fodder') ? ' Renvoyez ou sacrifiez un soldat (Combat, Chair à canon) pour faire de la place.' : ' Renvoyez un soldat pour faire de la place.'),
     ),
   );
 }

@@ -255,6 +255,7 @@ function simulationPanel(units: BattleUnit[], result: BattleResult, close: () =>
       h('td', null, (t.dealt / Math.max(duration, DT)).toFixed(1)),
       h('td', null, fmt(Math.round(t.taken))),
       h('td', null, fmt(Math.round(t.healed))),
+      h('td', null, fmt(Math.round(t.healGiven))),
     );
   });
   return h(
@@ -269,10 +270,14 @@ function simulationPanel(units: BattleUnit[], result: BattleResult, close: () =>
       '. Aucune récompense, aucune perte réelle.',
     ),
     h(
-      'table',
-      { class: 'stats-table' },
-      h('tr', null, h('th', null, 'Soldat'), h('th', null, 'État'), h('th', null, 'Élim.'), h('th', null, 'Infligés'), h('th', null, 'DPS'), h('th', null, 'Subis'), h('th', null, 'Soins')),
-      rows,
+      'div',
+      { class: 'table-scroll' },
+      h(
+        'table',
+        { class: 'stats-table' },
+        h('tr', null, h('th', null, 'Soldat'), h('th', null, 'État'), h('th', null, 'Élim.'), h('th', null, 'Infligés'), h('th', null, 'DPS'), h('th', null, 'Subis'), h('th', null, 'Soins reçus'), h('th', null, 'Soins donnés')),
+        rows,
+      ),
     ),
     resultActions(close, replay),
   );
@@ -288,7 +293,7 @@ function resultActions(close: () => void, replay?: ReplayAction): HTMLElement {
 }
 
 function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAction): HTMLElement {
-  const title = report.won ? 'Victoire !' : report.timeout ? 'Temps écoulé — défaite' : 'Défaite';
+  const title = report.colossus ? (report.colossus.killed ? 'Colosse abattu !' : 'Sacrifice accompli') : report.won ? 'Victoire !' : report.timeout ? 'Temps écoulé — défaite' : 'Défaite';
   const survivors = new Set(report.soldiers.filter((s) => !s.died).map((s) => s.id));
   const picks = getState().soldiers.filter((s) => survivors.has(s.id) && s.picksLeft > 0).length;
   const rows = report.soldiers.map((s) =>
@@ -297,7 +302,7 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
       { class: s.died ? 'died' : s.wounded ? 'wounded' : '' },
       h('b', null, s.name),
       s.died
-        ? ' est mort au combat : il quitte l’escouade.'
+        ? report.colossus ? ' a été sacrifié : il quitte l’escouade.' : ' est mort au combat : il quitte l’escouade.'
         : s.wounded
           ? report.mode === 'training' ? ' a été mis K.O. : il s’en remettra (pas d’XP).' : ' est tombé mais a été rapatrié grâce à la victoire (pas d’XP).'
           : ` +${fmt(s.xpGained)} XP`,
@@ -308,8 +313,8 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
   const details = h(
     'table',
     { class: 'stats-table' },
-    h('tr', null, h('th', null, 'Soldat'), h('th', null, 'Infligés'), h('th', null, 'Subis'), h('th', null, 'Soins reçus')),
-    report.soldiers.map((s) => h('tr', { class: s.died ? 'died' : '' }, h('td', null, s.name), h('td', null, fmt(Math.round(s.dealt))), h('td', null, fmt(Math.round(s.taken))), h('td', null, fmt(Math.round(s.healed))))),
+    h('tr', null, h('th', null, 'Soldat'), h('th', null, 'Infligés'), h('th', null, 'Subis'), h('th', null, 'Soins reçus'), h('th', null, 'Soins donnés')),
+    report.soldiers.map((s) => h('tr', { class: s.died ? 'died' : '' }, h('td', null, s.name), h('td', null, fmt(Math.round(s.dealt))), h('td', null, fmt(Math.round(s.taken))), h('td', null, fmt(Math.round(s.healed))), h('td', null, fmt(Math.round(s.healGiven))))),
   );
   const detailsBox = h('div', { hidden: true }, details);
   const toggle = h(
@@ -325,8 +330,9 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
   );
   return h(
     'div',
-    { class: `result ${report.won ? 'won' : 'lost'}` },
+    { class: `result ${report.won || report.colossus ? 'won' : 'lost'}` },
     h('h2', null, title),
+    report.colossus && h('p', { class: report.colossus.killed ? 'levelup' : 'muted' }, `${fmt(report.colossus.dealt)} dégâts infligés. ${report.colossus.killed ? 'Un Colosse plus résistant prend sa place.' : `Il lui reste ${fmt(report.colossus.left)} / ${fmt(report.colossus.maxHp)} PV.`}`),
     report.stars && h('div', { class: 'result-stars' }, stars(report.stars.got, 3, 'stars-huge'), report.stars.gained > 0 ? h('small', null, `+${report.stars.gained} nouvelle${report.stars.gained > 1 ? 's' : ''} étoile${report.stars.gained > 1 ? 's' : ''}`) : report.stars.best > report.stars.got && h('small', { class: 'muted' }, `Record : ${report.stars.best} ★`)),
     report.firstClear && h('p', { class: 'levelup' }, `Niveau ${report.level} de la campagne terminé !`),
     report.daily &&
@@ -346,6 +352,8 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
       'div',
       { class: 'result-rewards' },
       report.trainingFee && h('span', { class: 'reward cost', title: 'Entraînements payants, réglés au lancement' }, `−${fmt(report.trainingFee)} or d'entraînement`),
+      report.colossus && report.colossus.pity > 0 && h('span', { class: 'reward' }, `🎯 Garantie de recrutement +${report.colossus.pity}`),
+      report.colossus && report.colossus.weaponsLost > 0 && h('span', { class: 'reward cost' }, `−${report.colossus.weaponsLost} arme${report.colossus.weaponsLost > 1 ? 's' : ''}`),
       report.gold > 0 && h('span', { class: 'reward' }, `🪙 +${fmt(report.gold)} or`, report.stars && report.stars.gold > 0 ? h('small', null, ` (dont ${fmt(report.stars.gold)} d'étoiles)`) : null),
       report.weapon && h('span', { class: 'reward', style: `color:${RARITIES[report.weapon.rarity].color}` }, weaponIcon(report.weapon), ` ${report.weapon.name} obtenu !`),
       report.freePulls > 0 && h('span', { class: 'reward' }, `🎟️ +${report.freePulls} tirage${report.freePulls > 1 ? 's' : ''} gratuit${report.freePulls > 1 ? 's' : ''}`),

@@ -116,7 +116,7 @@ describe('étoiles de campagne', () => {
     delete old.starChests;
     const st = parseSave(JSON.stringify(old))!;
     expect(totalStars(st)).toBe(13);
-    expect(st.starChests).toBe(1);
+    expect(st.starChests).toBe(Math.floor(13 / STAR_CHEST_EVERY));
   });
 });
 

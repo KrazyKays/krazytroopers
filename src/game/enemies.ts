@@ -1,4 +1,4 @@
-﻿import { WEAPONS_BY_ID } from './data';
+﻿import { COLOSSUS_HP, COLOSSUS_HP_PER_RANK, WEAPONS_BY_ID } from './data';
 import { ARENA_W, type BattleUnit } from './battle';
 import { mulberry32, range, weightedPick, type Rng } from './rng';
 import type { CombatStats, SpriteLook, WeaponDef } from './types';
@@ -48,6 +48,9 @@ export function levelPower(level: number): number {
 /** Surcoût de puissance des tout premiers niveaux, qui s'estompe jusqu'au niveau EARLY_LEVELS. */
 const EARLY_BUMP = 0.8;
 const EARLY_LEVELS = 12;
+
+/** Troupes ennemies, pour les présenter dans le wiki. */
+export const ENEMY_TEMPLATES: readonly Pick<Template, 'name' | 'weapon' | 'minLevel'>[] = TEMPLATES;
 
 export function campaignEnemyCount(level: number): number {
   return Math.min(2 + Math.floor(level * 0.55), 18);
@@ -223,6 +226,35 @@ export function survivalWaveLevel(wave: number, campaignLevel: number): number {
 export function buildSurvivalEnemies(wave: number, campaignLevel: number, rng: Rng): BattleUnit[] {
   const level = survivalWaveLevel(wave, campaignLevel);
   return army(level, campaignEnemyCount(level), isBossLevel(wave) ? 1 : 0, rng, {}, undefined, eliteCount(level));
+}
+
+// ---------- Chair à canon ----------
+
+export function colossusMaxHp(rank: number): number {
+  return COLOSSUS_HP * (1 + COLOSSUS_HP_PER_RANK * (rank - 1));
+}
+
+/** Le Colosse : ses PV se conservent d'un sacrifice à l'autre, et sa rage grandissante finit par abattre n'importe qui. */
+export function buildColossus(rank: number, hp: number): BattleUnit {
+  const look: SpriteLook = { skin: '#8fa06a', hair: '#222', uniform: '#3a2a4a', helmet: '#7a1f1f', weaponId: 'minigun' };
+  const stats: CombatStats = {
+    maxHp: colossusMaxHp(rank),
+    damage: 30,
+    range: 110,
+    cooldown: 1.2,
+    speed: 90,
+    armor: 20,
+    crit: 0,
+    dodge: 0,
+    lifesteal: 0,
+    regen: 0,
+    aoe: 40,
+    ranged: true,
+    berserk: false,
+    secondWind: false,
+    heal: false,
+  };
+  return { id: 'colossus', team: 'enemy', name: `Le Colosse (rang ${rank})`, look, scale: 1.8, stats, hp, growth: 4 };
 }
 
 // ---------- Simulation ----------

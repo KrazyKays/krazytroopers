@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { cashOutSurvival, dailyGold, estimateBattle, launchBattle } from './combat';
-import { BOSS_FREE_PULLS, FORGE_FEE, MAX_LEVEL, SQUAD_BASE, TRAINING_PER_SOLDIER, UNLOCKS, WEAPONS_BY_ID } from './data';
-import { buildDailyEnemies, dailyKey } from './enemies';
+import { simulate, type BattleUnit } from './battle';
+import { cashOutSurvival, dailyGold, estimateBattle, launchBattle, launchFodder } from './combat';
+import { BOSS_FREE_PULLS, COLOSSUS_PULLS, DAILY_PULL_EVERY, FORGE_FEE, PITY_LIMIT, MAX_LEVEL, SQUAD_BASE, TRAINING_PER_SOLDIER, UNLOCKS, WEAPONS_BY_ID } from './data';
+import { buildDailyEnemies, buildScarecrow, colossusMaxHp, dailyKey } from './enemies';
 import { squadMax, unlockLevel, unlocksBetween } from './progress';
 import { mulberry32 } from './rng';
 import { createSoldier, forgeWeapons, trainingCost } from './roster';
 import { createInitialState, parseSave } from './state';
 import { computeStats } from './stats';
+import { recommendedUpgrade, upgradeGains } from './upgrades';
 import type { GameState } from './types';
 
 /** `n` soldats communs au niveau donné, chacun équipé de son arme, sans les armes de départ. */
@@ -130,7 +132,7 @@ describe('défi du jour', () => {
     const day1 = launchBattle(st, { mode: 'daily', squad: ids(st), date: '2026-03-01' }, 1);
     if (!day1.ok) throw new Error(day1.error);
     expect(day1.report.won).toBe(true);
-    expect(day1.report.freePulls).toBe(1);
+    expect(day1.report.freePulls).toBe(0);
     expect(day1.report.weapon).not.toBeNull();
     expect(st.dailyStreak).toBe(1);
     expect(launchBattle(st, { mode: 'daily', squad: ids(st), date: '2026-03-01' }).ok).toBe(false);
@@ -210,6 +212,156 @@ describe('armes à bonus', () => {
     const heals = r.result.frames.flatMap((f) => f.e).filter((e) => e.t === 'heal');
     expect(heals.length).toBeGreaterThan(0);
     expect(heals.every((e) => e.t === 'heal' && r.units[e.b].team === 'ally' && e.amount >= 0)).toBe(true);
+  });
+
+  it('ne conseille ni la Rage ni le vol de vie à un soigneur, contrairement à un tireur', () => {
+    const choices = ['vampire', 'berserk', 'power'];
+    const medic = squadState(1, 10, 'medic');
+    medic.soldiers[0].upgradeChoices = choices;
+    const gains = upgradeGains(medic, medic.soldiers[0]);
+    expect(gains.get('vampire')).toBe(0);
+    expect(gains.get('berserk')).toBe(0);
+    expect(recommendedUpgrade(medic, medic.soldiers[0])).toBe('power');
+
+    const rifle = squadState(1, 10);
+    rifle.soldiers[0].upgradeChoices = choices;
+    const rifleGains = upgradeGains(rifle, rifle.soldiers[0]);
+    expect(rifleGains.get('vampire')).toBeGreaterThan(0);
+    expect(rifleGains.get('berserk')).toBeGreaterThan(0);
+  });
+
+  describe('règles de soin', () => {
+    const ally = (id: string, maxHp: number, hp: number, heal: boolean): BattleUnit => ({
+      id,
+      team: 'ally',
+      name: id,
+      look: buildScarecrow().look,
+      scale: 1,
+      hp,
+      stats: { ...buildScarecrow().stats, maxHp, damage: 1, range: 800, cooldown: 1, lifesteal: 1, heal },
+    });
+    const target: BattleUnit = { ...buildScarecrow(), dummy: { growth: 0 } };
+
+    it('soigner un allié ne rend aucun PV au soigneur', () => {
+      const r = simulate([ally('medic', 100, 50, true), ally('patient', 100000, 1, false), target], 1);
+      expect(r.frames.flatMap((f) => f.e).some((e) => e.t === 'heal' && e.b === 1)).toBe(true);
+      expect(r.hpLeft.medic).toBe(50);
+    });
+
+    it('distingue les soins donnés des soins reçus', () => {
+      const r = simulate([ally('medic', 100, 100, true), ally('patient', 100000, 1, false), target], 1);
+      const { medic, patient } = r.totals;
+      expect(medic.healGiven).toBeGreaterThan(0);
+      expect(medic.healed).toBe(0);
+      expect(patient.healGiven).toBe(0);
+      // le patient reçoit le soin du médecin, plus son propre vol de vie
+      expect(patient.healed).toBeGreaterThan(medic.healGiven);
+    });
+
+    it('un soin critique rend deux fois plus de PV', () => {
+      const medic = ally('medic', 100, 100, true);
+      medic.stats.damage = 10;
+      medic.stats.crit = 1;
+      const r = simulate([medic, ally('patient', 100000, 1, false), target], 1);
+      const heals = r.frames.flatMap((f) => f.e).filter((e) => e.t === 'heal');
+      expect(heals.length).toBeGreaterThan(0);
+      expect(heals.every((e) => e.t === 'heal' && e.amount >= 18)).toBe(true);
+    });
+
+    it('tirer sur un ennemi quand personne n’est blessé soigne le soigneur', () => {
+      const r = simulate([ally('medic', 100, 95, true), target], 1);
+      expect(r.hpLeft.medic).toBeGreaterThan(95);
+    });
+  });
+});
+
+describe('chair à canon', () => {
+  const fodder = (n: number, weapon = 'pistol', level = 1): GameState => {
+    const st = squadState(n, level, weapon);
+    st.campaignLevel = 10;
+    return st;
+  };
+
+  it('perd tous les soldats engagés avec leurs armes et conserve les blessures du Colosse', () => {
+    const st = fodder(4);
+    const spare = st.soldiers[3].weaponUid;
+    const engaged = ids(st).slice(0, 3);
+    const r = launchFodder(st, engaged, 1);
+    if (!r.ok) throw new Error(r.error);
+    expect(st.soldiers).toHaveLength(1);
+    expect(st.weapons.map((w) => w.uid)).toEqual([spare]);
+    expect(r.report.colossus?.weaponsLost).toBe(3);
+    expect(st.pity).toBe(3);
+    expect(st.gold).toBe(createInitialState().gold);
+    expect(st.colossus.rank).toBe(1);
+    expect(st.colossus.damage).toBeGreaterThan(0);
+    expect(r.report.colossus?.left).toBeCloseTo(colossusMaxHp(1) - st.colossus.damage);
+    expect(r.report.soldiers.every((s) => s.died && s.xpGained === 0)).toBe(true);
+  });
+
+  it('récompense la mort du Colosse, même si des soldats restent debout', () => {
+    const st = fodder(3);
+    st.colossus.damage = colossusMaxHp(1) - 1;
+    const pulls = st.freePulls;
+    const r = launchFodder(st, ids(st), 2);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.report.colossus?.killed).toBe(true);
+    expect(st.soldiers).toHaveLength(0);
+    expect(st.freePulls).toBe(pulls + COLOSSUS_PULLS);
+    expect(st.pity).toBe(PITY_LIMIT - 1);
+    expect(st.colossus).toEqual({ rank: 2, damage: 0 });
+    expect(colossusMaxHp(2)).toBeGreaterThan(colossusMaxHp(1));
+  });
+
+  it('protège les favoris et les soldats en expédition', () => {
+    const st = fodder(2);
+    st.soldiers[0].favorite = true;
+    expect(launchFodder(st, [st.soldiers[0].id]).ok).toBe(false);
+    st.survival = { squad: [st.soldiers[1].id], wave: 1, pot: 0, hp: {} };
+    expect(launchFodder(st, [st.soldiers[1].id]).ok).toBe(false);
+    expect(st.soldiers).toHaveLength(2);
+  });
+
+  it('reste verrouillé avant son palier de campagne', () => {
+    const st = fodder(1);
+    st.campaignLevel = 0;
+    expect(launchFodder(st, ids(st)).ok).toBe(false);
+    expect(st.soldiers).toHaveLength(1);
+  });
+
+  it('ne met pas la garantie au-delà du tirage garanti', () => {
+    const st = fodder(3);
+    st.pity = PITY_LIMIT - 2;
+    launchFodder(st, ids(st), 3);
+    expect(st.pity).toBe(PITY_LIMIT - 1);
+  });
+});
+
+describe('tirages gratuits', () => {
+  it('le défi du jour n’en offre qu’au bout d’une série', () => {
+    const st = squadState(3, 15);
+    st.campaignLevel = 7;
+    const start = new Date(2026, 0, 1);
+    const pulls: number[] = [];
+    for (let d = 0; d < DAILY_PULL_EVERY * 2; d++) {
+      st.soldiers.forEach((s) => { s.level = 30; });
+      const date = dailyKey(new Date(start.getFullYear(), start.getMonth(), start.getDate() + d));
+      const r = launchBattle(st, { mode: 'daily', squad: ids(st).slice(0, 3), date }, d + 1);
+      if (!r.ok) throw new Error(r.error);
+      expect(r.report.won).toBe(true);
+      pulls.push(r.report.freePulls);
+    }
+    expect(pulls).toEqual([0, 0, 1, 0, 0, 1]);
+  });
+
+  it('recale les coffres d’une ancienne sauvegarde sans reprendre de tickets', () => {
+    const st = createInitialState();
+    st.campaignStars = { 1: 3, 2: 3, 3: 3, 4: 3, 5: 3, 6: 3, 7: 3, 8: 3 };
+    st.starChests = 2;
+    st.freePulls = 5;
+    const loaded = parseSave(JSON.stringify(st))!;
+    expect(loaded.starChests).toBe(1);
+    expect(loaded.freePulls).toBe(5);
   });
 });
 

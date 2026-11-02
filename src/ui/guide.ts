@@ -28,7 +28,7 @@ export function nextStep(st: GameState): Step | null {
   if (st.soldiers.length === 0) {
     if (st.freePulls > 0) return { icon: '🎲', title: 'Recrutez votre escouade', text: `Vous avez ${st.freePulls} tirage${st.freePulls > 1 ? 's' : ''} gratuit${st.freePulls > 1 ? 's' : ''} pour former vos premiers soldats.`, action: { label: 'Recruter', run: () => goTo('recruit') }, tab: 'recruit' };
     if (st.gold >= PULL_COST) return { icon: '🎲', title: 'Recrutez des soldats', text: 'Votre escouade est vide : recrutez de nouveaux soldats.', action: { label: 'Recruter', run: () => goTo('recruit') }, tab: 'recruit' };
-    return { icon: '💀', title: 'Escouade perdue', text: "Plus de soldats ni d'or pour en recruter : vous pouvez recommencer une partie depuis l'onglet Infos.", action: { label: 'Infos', run: () => goTo('settings') }, tab: 'settings' };
+    return { icon: '💀', title: 'Escouade perdue', text: "Plus de soldats ni d'or pour en recruter : vous pouvez recommencer une partie depuis l'onglet Paramètres.", action: { label: 'Paramètres', run: () => goTo('settings') }, tab: 'settings' };
   }
   const pending = sortSquad(st, getSquadSort()).filter((s) => s.picksLeft > 0);
   if (pending.length > 0) {
@@ -102,6 +102,6 @@ export function renderGuide(): HTMLElement | null {
     h('span', { class: 'guide-icon' }, step.icon),
     h('div', { class: 'guide-text' }, h('b', null, step.title), h('span', null, step.text)),
     step.action && !here && h('button', { class: 'btn btn-small btn-gold', onclick: step.action.run }, step.action.label),
-    h('button', { class: 'guide-close', title: 'Masquer le guide (réactivable dans Infos)', onclick: () => mutate((g) => { g.hideGuide = true; }) }, '×'),
+    h('button', { class: 'guide-close', title: 'Masquer le guide (réactivable dans Paramètres)', onclick: () => mutate((g) => { g.hideGuide = true; }) }, '×'),
   );
 }

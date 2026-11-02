@@ -17,6 +17,8 @@ export interface BattleUnit {
   stats: CombatStats;
   /** Cible factice (mode simulation) : invincible, et ses dégâts augmentent de `growth` par seconde de combat. */
   dummy?: { growth: number };
+  /** Dégâts ajoutés par seconde de combat, sans rendre l'unité invincible (Colosse). */
+  growth?: number;
   /** Affixe d'un ennemi d'élite (affiché en combat et dans l'aperçu). */
   elite?: string;
   /** PV au début du combat (survie : les blessures des vagues précédentes) ; PV max par défaut. */
@@ -40,7 +42,10 @@ export interface Frame {
 export interface UnitTotals {
   dealt: number;
   taken: number;
+  /** Soins reçus, de toutes origines (fusil médical, vol de vie, régénération). */
   healed: number;
+  /** Soins prodigués avec un fusil médical. */
+  healGiven: number;
 }
 
 export interface BattleResult {
@@ -80,6 +85,7 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
   const totalDealt = new Float64Array(n);
   const totalTaken = new Float64Array(n);
   const totalHealed = new Float64Array(n);
+  const totalHealGiven = new Float64Array(n);
 
   for (const team of ['ally', 'enemy'] as Team[]) {
     const idx = units.map((u, i) => (u.team === team ? i : -1)).filter((i) => i >= 0);
@@ -202,6 +208,7 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
           const amount = S.damage * (0.9 + rng() * 0.2) * (rng() < S.crit ? 2 : 1);
           const before = hp[patient];
           heal(patient, amount);
+          totalHealGiven[i] += hp[patient] - before;
           events.push({ t: 'heal', a: i, b: patient, amount: Math.round(hp[patient] - before) });
         } else {
           const step = Math.min(S.speed * DT, d - S.range * 0.9);
@@ -223,8 +230,8 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
           events.push({ t: 'miss', a: i, b: t, ranged: S.ranged });
           continue;
         }
-        const dummy = units[i].dummy;
-        let dmg = (S.damage + (dummy ? dummy.growth * tick * DT : 0)) * (0.9 + rng() * 0.2);
+        const growth = units[i].dummy?.growth ?? units[i].growth ?? 0;
+        let dmg = (S.damage + growth * tick * DT) * (0.9 + rng() * 0.2);
         if (S.berserk && hp[i] < S.maxHp * 0.5) dmg *= 1.4;
         const crit = rng() < S.crit;
         if (crit) dmg *= 2;
@@ -295,7 +302,7 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
   const hpLeft: Record<string, number> = {};
   for (let i = 0; i < n; i++) {
     const u = units[i];
-    totals[u.id] = { dealt: totalDealt[i], taken: totalTaken[i], healed: totalHealed[i] };
+    totals[u.id] = { dealt: totalDealt[i], taken: totalTaken[i], healed: totalHealed[i], healGiven: totalHealGiven[i] };
     if (u.team !== 'ally') continue;
     if (!alive(i)) deadIds.push(u.id);
     kills[u.id] = killCount[i];

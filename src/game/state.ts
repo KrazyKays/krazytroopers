@@ -23,6 +23,7 @@ export function createInitialState(): GameState {
     dailyStreak: 0,
     survival: null,
     bestWave: 0,
+    colossus: { rank: 1, damage: 0 },
     tactic: 'balanced',
     campaignStars: {},
     starChests: 0,
@@ -48,7 +49,11 @@ function isValidState(x: unknown): x is GameState {
 
 // Sauvegardes antérieures aux étoiles : chaque niveau terminé compte pour une étoile, sans coffre rétroactif.
 function starsOf(data: GameState): Pick<GameState, 'campaignStars' | 'starChests'> {
-  if (data.campaignStars && typeof data.campaignStars === 'object') return { campaignStars: data.campaignStars, starChests: data.starChests ?? 0 };
+  if (data.campaignStars && typeof data.campaignStars === 'object') {
+    // Le palier d'un coffre peut augmenter : le compteur est recalé, et le prochain coffre s'ouvre au prochain palier
+    const total = Object.values(data.campaignStars).reduce((a, b) => a + b, 0);
+    return { campaignStars: data.campaignStars, starChests: Math.min(data.starChests ?? 0, Math.floor(total / STAR_CHEST_EVERY)) };
+  }
   const campaignStars: Record<number, number> = {};
   for (let l = 1; l <= data.campaignLevel; l++) campaignStars[l] = 1;
   return { campaignStars, starChests: Math.floor(data.campaignLevel / STAR_CHEST_EVERY) };
@@ -68,6 +73,7 @@ export function parseSave(raw: string): GameState | null {
           dailyStreak: typeof data.dailyStreak === 'number' ? data.dailyStreak : 0,
           survival: data.survival ?? null,
           bestWave: typeof data.bestWave === 'number' ? data.bestWave : 0,
+          colossus: data.colossus ?? { rank: 1, damage: 0 },
           tactic: data.tactic ?? 'balanced',
           ...starsOf(data),
           claimedGoals: Array.isArray(data.claimedGoals) ? data.claimedGoals : [],
