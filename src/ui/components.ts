@@ -1,7 +1,7 @@
 import { MAX_LEVEL, RARITIES, RARITY_ORDER, TITLES, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
 import { getState, getVersion, mutate, refresh, replaceState } from '../game/state';
 import { soldierLook } from '../game/look';
-import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
+import { computeStats, dps, powerScore, weaponForSoldier, xpForNext } from '../game/stats';
 import { SQUAD_SORTS, sortSquad, type SquadSort } from '../game/roster';
 import { FAMILY_LABELS, POSITIONS, POSITIONS_BY_ID, weaponFamily } from '../game/squad';
 import type { GameState, Rarity, Soldier, TitleId, WeaponDef } from '../game/types';
@@ -17,6 +17,28 @@ export function progressBar(ratio: number, label?: string, cls = ''): HTMLElemen
     { class: `progress ${cls}` },
     h('div', { class: 'progress-track' }, h('div', { class: 'progress-fill', style: `width:${Math.max(0, Math.min(1, ratio)) * 100}%` })),
     label && h('small', { class: 'progress-label' }, label),
+  );
+}
+
+// Les écrans sont reconstruits à chaque changement : l'état ouvert des blocs repliés est gardé à part
+const openFolds = new Set<string>();
+
+/** Bloc secondaire, replié par défaut : l'écran ne montre d'emblée que ce qui décide de la prochaine action. */
+export function fold(key: string, label: Child, content: Child, startOpen = false): HTMLElement {
+  const open = openFolds.has(key) || (startOpen && !openFolds.has(`${key}:closed`));
+  return h(
+    'details',
+    {
+      class: 'fold',
+      open,
+      ontoggle: (e) => {
+        const isOpen = (e.target as HTMLDetailsElement).open;
+        openFolds[isOpen ? 'add' : 'delete'](key);
+        openFolds[isOpen ? 'delete' : 'add'](`${key}:closed`);
+      },
+    },
+    h('summary', { class: 'fold-label' }, label),
+    h('div', { class: 'fold-body' }, content),
   );
 }
 
@@ -123,7 +145,6 @@ function cardClass(base: string, s: Soldier, opts: CardOpts): string {
 export function soldierCard(st: GameState, s: Soldier, opts: CardOpts = {}): HTMLElement {
   const weapon = weaponForSoldier(s, st.weapons);
   const stats = computeStats(s, weapon);
-  const trainings = s.trainingsLeft > 0;
   const badges = s.titles.map((t) => h('span', { class: `title-badge title-badge-${t}`, title: TITLES[t].label }, TITLE_BADGE_ICON[t]));
   const nameClass = ['card-name', ...s.titles.map((t) => `name-${t}`)].join(' ');
   return h(
@@ -131,7 +152,7 @@ export function soldierCard(st: GameState, s: Soldier, opts: CardOpts = {}): HTM
     {
       class: cardClass('card', s, opts),
       style: `--rc:${RARITIES[s.rarity].color}`,
-      title: opts.disabled ? opts.disabledReason : undefined,
+      title: opts.disabled ? opts.disabledReason : RARITIES[s.rarity].label,
       onclick: opts.onclick ? () => opts.onclick!() : undefined,
     },
     opts.selected && h('span', { class: 'card-check' }, '✓'),
@@ -140,15 +161,8 @@ export function soldierCard(st: GameState, s: Soldier, opts: CardOpts = {}): HTM
       'div',
       { class: 'card-body' },
       h('div', { class: nameClass }, s.favorite && h('span', { class: 'fav-star', title: 'Favori' }, '★ '), s.name),
-      h('div', { class: 'card-sub' }, rarityTag(s.rarity), h('span', { class: 'card-level' }, `Niv. ${s.level}`)),
+      h('div', { class: 'card-sub' }, h('span', { class: 'card-level' }, `Niv. ${s.level}`), h('span', { class: 'card-power', title: 'Puissance : résume les PV, les dégâts, la portée et les bonus' }, `⚡ ${fmt(powerScore(stats))}`)),
       xpBar(s),
-      h(
-        'div',
-        { class: 'card-stats' },
-        h('span', { title: 'Points de vie' }, '❤ ', fmt(stats.maxHp)),
-        h('span', { title: 'Dégâts par seconde' }, '✦ ', fmt(dps(stats), 1)),
-        trainings && h('span', { title: 'Entraînements gratuits restants' }, '🎯 ', String(s.trainingsLeft)),
-      ),
       h('div', { class: 'card-pills' }, statusPills(s, weapon), costPill(opts)),
     ),
   );
@@ -179,7 +193,6 @@ export function soldierRow(st: GameState, s: Soldier, opts: CardOpts = {}): HTML
     h('span', { class: 'row-level' }, rarityTag(s.rarity), ` Niv. ${s.level}`),
     h('span', { class: 'row-stat' }, `PV ${fmt(stats.maxHp)}`),
     h('span', { class: 'row-stat' }, `DPS ${fmt(dps(stats), 1)}`),
-    h('span', { class: 'row-stat', title: 'Entraînements gratuits restants' }, `Entr. ${s.trainingsLeft}`),
     h('span', { class: 'row-pills' }, statusPills(s, weapon), costPill(opts)),
   );
 }
@@ -241,7 +254,9 @@ export function squadToolbar(st: GameState): HTMLElement {
   );
   rarity.value = rarityFilter;
   const chip = (active: boolean, label: string, onclick: () => void, title?: string) => h('button', { class: `chip${active ? ' active' : ''}`, title, onclick }, label);
-  return h(
+  const filtered = squadFilter !== 'all' || rarityFilter !== 'all';
+  const label = `Filtres et tri${filtered ? ` : ${visibleSquad(st).length} / ${st.soldiers.length} soldats` : ''}`;
+  return fold('squad-filters', label, h(
     'div',
     { class: 'squad-toolbar' },
     h(
@@ -260,7 +275,7 @@ export function squadToolbar(st: GameState): HTMLElement {
       chip(squadLayout === 'cards', '▦ Cartes', () => setLayout('cards'), 'Affichage en cartes'),
       chip(squadLayout === 'list', '☰ Liste', () => setLayout('list'), 'Affichage en liste compacte'),
     ),
-  );
+  ));
 }
 
 /** Grille (ou liste) des soldats visibles ; prévient quand les filtres masquent tout. */

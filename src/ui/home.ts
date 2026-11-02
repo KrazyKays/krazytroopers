@@ -1,19 +1,16 @@
-import { dailyDone, totalStars } from '../game/combat';
-import { STAR_CHEST_EVERY } from '../game/data';
-import { dailyKey, dailyLevel, dailyModifier, isBossLevel, previewCampaign } from '../game/enemies';
+import { dailyDone } from '../game/combat';
+import { dailyKey, dailyModifier, previewCampaign } from '../game/enemies';
 import { claimableGoals, claimGoal, GOALS, openGoals, rewardLabel, type GoalDef } from '../game/goals';
-import { isUnlocked, nextUnlock, squadMax, unlockLevel } from '../game/progress';
-import { barracksCap, sortSquad } from '../game/roster';
-import { getState, mutate, refresh } from '../game/state';
+import { isUnlocked, nextUnlock } from '../game/progress';
+import { sortSquad } from '../game/roster';
+import { getState, mutate } from '../game/state';
 import type { GameState } from '../game/types';
 import { openCombat, type CombatMode } from './combat';
-import { fmt, progressBar, soldierSprite, toast } from './components';
+import { fmt, fold, progressBar, soldierSprite, toast } from './components';
 import { h } from './dom';
 import { nextStep } from './guide';
 import { goTo } from './nav';
 import { openSoldier } from './roster';
-
-let showAllGoals = false;
 
 function heroCard(st: GameState): HTMLElement {
   const step = nextStep(st);
@@ -29,59 +26,41 @@ function heroCard(st: GameState): HTMLElement {
   );
 }
 
-function modeCard(o: { icon: string; title: string; lines: (string | HTMLElement | false)[]; cta: string; mode: CombatMode; locked?: string; highlight?: boolean; tag?: string }): HTMLElement {
+function modeCard(o: { icon: string; title: string; line: string; mode: CombatMode; tag?: string }): HTMLElement {
   return h(
     'button',
-    { class: `quick-card${o.locked ? ' locked' : ''}${o.highlight ? ' highlight' : ''}`, onclick: () => openCombat(o.mode) },
-    h('div', { class: 'quick-head' }, h('span', { class: 'quick-icon' }, o.locked ? '🔒' : o.icon), h('b', null, o.title), o.tag && h('span', { class: 'tag tag-accent' }, o.tag)),
-    h('div', { class: 'quick-lines' }, o.locked ? h('span', { class: 'muted' }, o.locked) : o.lines.filter(Boolean).map((l) => h('span', null, l))),
-    h('span', { class: 'quick-cta' }, o.locked ? 'Voir' : o.cta, ' →'),
+    { class: 'quick-card', onclick: () => openCombat(o.mode) },
+    h('span', { class: 'quick-icon' }, o.icon),
+    h('span', { class: 'quick-text' }, h('b', null, o.title), h('small', { class: 'muted' }, o.line)),
+    o.tag && h('span', { class: 'tag tag-accent' }, o.tag),
   );
 }
 
-function quickCards(st: GameState): HTMLElement {
+/** La campagne domine l'écran ; les modes annexes n'apparaissent qu'une fois débloqués, sur une seule ligne chacun. */
+function missions(st: GameState): HTMLElement {
   const next = st.campaignLevel + 1;
   const prev = previewCampaign(next);
   const free = st.soldiers.reduce((n, s) => n + s.trainingsLeft, 0);
-  const daily = isUnlocked(st, 'daily');
-  const surv = isUnlocked(st, 'survival');
+  const unlock = nextUnlock(st);
   return h(
     'div',
-    { class: 'quick-grid' },
-    modeCard({
-      icon: '🚩',
-      title: 'Campagne',
-      mode: 'campaign',
-      tag: prev.boss ? 'BOSS' : undefined,
-      highlight: true,
-      lines: [`Niveau ${next} · ${prev.count} ennemis`, prev.elites.length > 0 && `${prev.elites.length} élite${prev.elites.length > 1 ? 's' : ''} : ${prev.elites.map((e) => e.name).join(', ')}`, progressBar((totalStars(st) % STAR_CHEST_EVERY) / STAR_CHEST_EVERY, `Coffre d'étoiles : ${totalStars(st) % STAR_CHEST_EVERY} / ${STAR_CHEST_EVERY} ★`)],
-      cta: 'Préparer',
-    }),
-    modeCard({
-      icon: '📅',
-      title: 'Défi du jour',
-      mode: 'daily',
-      locked: daily ? undefined : `Niveau ${unlockLevel('daily')} de la campagne`,
-      tag: daily && !dailyDone(st) ? 'NOUVEAU' : undefined,
-      lines: [`« ${dailyModifier(dailyKey()).name} » · puissance ${dailyLevel(st.campaignLevel)}`, dailyDone(st) ? 'Déjà tenté : revenez demain' : 'Une tentative, grosses récompenses', st.dailyStreak > 0 && `Série : ${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''}`],
-      cta: dailyDone(st) ? 'Voir' : 'Relever',
-    }),
-    modeCard({
-      icon: '🔥',
-      title: 'Survie',
-      mode: 'survival',
-      locked: surv ? undefined : `Niveau ${unlockLevel('survival')} de la campagne`,
-      tag: st.survival ? 'EN COURS' : undefined,
-      lines: st.survival ? [`Vague ${st.survival.wave} remportée`, `Pot : ${fmt(st.survival.pot)} or`] : ['Enchaînez les vagues', `Record : vague ${st.bestWave}`],
-      cta: st.survival ? 'Continuer' : 'Partir',
-    }),
-    modeCard({
-      icon: '🎯',
-      title: 'Entraînement',
-      mode: 'training',
-      lines: ['Sans danger, pour l’XP', `${free} entraînement${free > 1 ? 's' : ''} gratuit${free > 1 ? 's' : ''} dans l’escouade`],
-      cta: "S'entraîner",
-    }),
+    { class: 'missions' },
+    h(
+      'button',
+      { class: `mission-main${prev.boss ? ' boss' : ''}`, onclick: () => openCombat('campaign') },
+      h('span', { class: 'mission-eyebrow' }, prev.boss ? '☠ Boss' : '🚩 Campagne'),
+      h('b', { class: 'mission-title' }, `Niveau ${next}`),
+      h('span', { class: 'muted' }, `${prev.count} ennemis${prev.elites.length > 0 ? `, dont ${prev.elites.length} élite${prev.elites.length > 1 ? 's' : ''}` : ''}`),
+      h('span', { class: 'btn btn-primary btn-big mission-cta' }, 'Préparer le combat →'),
+    ),
+    h(
+      'div',
+      { class: 'quick-grid' },
+      isUnlocked(st, 'daily') && modeCard({ icon: '📅', title: 'Défi du jour', mode: 'daily', tag: dailyDone(st) ? undefined : 'NOUVEAU', line: dailyDone(st) ? 'Revenez demain' : `« ${dailyModifier(dailyKey()).name} »` }),
+      isUnlocked(st, 'survival') && modeCard({ icon: '🔥', title: 'Survie', mode: 'survival', tag: st.survival ? 'EN COURS' : undefined, line: st.survival ? `Pot : ${fmt(st.survival.pot)} or` : `Record : vague ${st.bestWave}` }),
+      modeCard({ icon: '🎯', title: 'Entraînement', mode: 'training', line: free > 0 ? `${free} gratuit${free > 1 ? 's' : ''}` : 'Sans danger, pour l’XP' }),
+      unlock && h('div', { class: 'quick-card next-unlock', title: unlock.desc }, h('span', { class: 'quick-icon' }, '🔓'), h('span', { class: 'quick-text' }, h('b', null, unlock.label), h('small', { class: 'muted' }, `Au niveau ${unlock.level} de la campagne`))),
+    ),
   );
 }
 
@@ -101,63 +80,28 @@ function goalRow(st: GameState, g: GoalDef, claimable: boolean): HTMLElement {
 function goalsPanel(st: GameState): HTMLElement {
   const ready = claimableGoals(st);
   const open = openGoals(st);
-  const shown = showAllGoals ? open : open.slice(0, Math.max(0, 3 - Math.min(ready.length, 2)));
-  const done = st.claimedGoals.length;
+  // Une récompense à réclamer passe avant tout ; sinon, seul l'objectif le plus proche reste en vue
+  const shown = ready.length > 0 ? [] : open.slice(0, 1);
+  const rest = ready.length > 0 ? open : open.slice(1);
   return h(
     'div',
     { class: 'panel' },
-    h('div', { class: 'panel-head' }, h('h3', null, '🏆 Objectifs'), h('span', { class: 'muted small' }, `${done} / ${GOALS.length} accomplis`)),
-    h('div', { class: 'goal-list' }, ready.map((g) => goalRow(st, g, true)), shown.map((g) => goalRow(st, g, false))),
-    open.length > 3 && h('button', { class: 'btn btn-ghost btn-small', onclick: () => { showAllGoals = !showAllGoals; refresh(); } }, showAllGoals ? 'Réduire' : `Voir les ${open.length} objectifs en cours`),
+    h('div', { class: 'panel-head' }, h('h3', null, '🏆 Objectifs'), h('span', { class: 'muted small' }, `${st.claimedGoals.length} / ${GOALS.length}`)),
+    h('div', { class: 'goal-list' }, ready.slice(0, 2).map((g) => goalRow(st, g, true)), shown.map((g) => goalRow(st, g, false))),
+    rest.length > 0 && fold('goals', `Voir les ${rest.length} autres objectifs`, h('div', { class: 'goal-list' }, rest.map((g) => goalRow(st, g, false)))),
     ready.length === 0 && open.length === 0 && h('p', { class: 'muted' }, 'Tous les objectifs sont accomplis. Bravo !'),
   );
 }
 
 function squadPanel(st: GameState): HTMLElement {
   const top = sortSquad(st, 'dps').slice(0, 6);
-  const pending = st.soldiers.filter((s) => s.picksLeft > 0).length;
-  const unarmed = st.soldiers.filter((s) => !s.weaponUid).length;
   return h(
     'div',
     { class: 'panel' },
     h('div', { class: 'panel-head' }, h('h3', null, '🪖 Escouade'), h('button', { class: 'btn btn-ghost btn-small', onclick: () => goTo('roster') }, 'Gérer →')),
     st.soldiers.length === 0
       ? h('div', { class: 'empty' }, h('p', null, 'Aucun soldat pour l’instant.'), h('button', { class: 'btn btn-primary', onclick: () => goTo('recruit') }, 'Recruter'))
-      : [
-          h('div', { class: 'mini-squad' }, top.map((s) => h('button', { class: `mini-soldier rarity-${s.rarity}`, title: `${s.name} · Niv. ${s.level}`, onclick: () => openSoldier(s.id) }, soldierSprite(st, s), h('span', null, `Niv. ${s.level}`)))),
-          h(
-            'div',
-            { class: 'kpis' },
-            h('div', { class: 'kpi' }, h('b', null, `${st.soldiers.length}/${barracksCap(st)}`), h('span', null, 'caserne')),
-            h('div', { class: 'kpi' }, h('b', null, `${squadMax(st)}`), h('span', null, 'par combat')),
-            h('div', { class: `kpi${pending ? ' kpi-warn' : ''}` }, h('b', null, String(pending)), h('span', null, 'à améliorer')),
-            h('div', { class: `kpi${unarmed ? ' kpi-warn' : ''}` }, h('b', null, String(unarmed)), h('span', null, 'sans arme')),
-          ),
-        ],
-  );
-}
-
-function progressPanel(st: GameState): HTMLElement {
-  const next = nextUnlock(st);
-  return h(
-    'div',
-    { class: 'panel' },
-    h('div', { class: 'panel-head' }, h('h3', null, '🔓 Progression')),
-    next
-      ? [
-          h('p', null, h('b', null, next.label), h('span', { class: 'muted' }, ` — ${next.desc}`)),
-          progressBar(st.campaignLevel / next.level, `Campagne ${st.campaignLevel} / ${next.level}`),
-        ]
-      : h('p', { class: 'muted' }, 'Toutes les fonctionnalités sont débloquées.'),
-    h(
-      'div',
-      { class: 'kpis' },
-      h('div', { class: 'kpi' }, h('b', null, fmt(st.stats.won)), h('span', null, 'victoires')),
-      h('div', { class: 'kpi' }, h('b', null, fmt(st.stats.kills)), h('span', null, 'éliminations')),
-      h('div', { class: 'kpi' }, h('b', null, String(totalStars(st))), h('span', null, 'étoiles')),
-      h('div', { class: 'kpi' }, h('b', null, String(st.bestWave)), h('span', null, 'record survie')),
-    ),
-    isBossLevel(st.campaignLevel + 1) && h('p', { class: 'note note-warn' }, '☠ Le prochain niveau de campagne est un boss : préparez-vous !'),
+      : h('div', { class: 'mini-squad' }, top.map((s) => h('button', { class: `mini-soldier rarity-${s.rarity}`, title: `${s.name} · Niv. ${s.level}`, onclick: () => openSoldier(s.id) }, soldierSprite(st, s), h('span', null, `Niv. ${s.level}`)))),
   );
 }
 
@@ -167,8 +111,7 @@ export function renderHome(): HTMLElement {
     'section',
     { class: 'home' },
     heroCard(st),
-    h('h2', { class: 'section-title' }, 'Missions'),
-    quickCards(st),
-    h('div', { class: 'home-cols' }, goalsPanel(st), h('div', { class: 'stack' }, squadPanel(st), progressPanel(st))),
+    missions(st),
+    h('div', { class: 'home-cols' }, goalsPanel(st), squadPanel(st)),
   );
 }

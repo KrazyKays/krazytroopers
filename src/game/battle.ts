@@ -14,7 +14,7 @@ const COVER_GAP = 14;
 const FRONT_CONTACT = 30;
 /** À distance : s'arrête à cette part de sa portée, et recule sous REAR_RETREAT, moins vite qu'il n'avance. */
 const REAR_HOLD = 0.98;
-const REAR_RETREAT = 0.85;
+const REAR_RETREAT = 0.55;
 const REAR_RETREAT_SPEED = 0.5;
 
 export interface BattleUnit {

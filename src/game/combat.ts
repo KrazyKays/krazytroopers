@@ -1,5 +1,5 @@
 import { DT, simulate, type BattleResult, type BattleUnit } from './battle';
-import { BOSS_FREE_PULLS, COLOSSUS_PULLS, DAILY_PULL_EVERY, LOOT_FIRST_CLEAR, PITY_LIMIT, RARITY_ORDER, LOOT_METER_MAX, LOOT_REPLAY, MAX_LEVEL, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, type UnlockDef } from './data';
+import { BOSS_FREE_PULLS, COLOSSUS_PULLS, DAILY_PULL_EVERY, DEFEAT_DEATH_SHARE, LOOT_FIRST_CLEAR, PITY_LIMIT, RARITY_ORDER, LOOT_METER_MAX, LOOT_REPLAY, MAX_LEVEL, PULL_COST, RESCUE_PULLS, SAFE_LEVELS, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, type UnlockDef } from './data';
 import { grantLevelPicks } from './upgrades';
 import { activePosition, activeTactic, applySquadBonuses, synergyStatus } from './squad';
 import {
@@ -23,7 +23,7 @@ import { isUnlocked, squadMax, unlockLevel, unlocksBetween } from './progress';
 import { rollWeaponDrop, trainingCost } from './roster';
 import { aggregateMods, addXp, computeStats, weaponForSoldier } from './stats';
 import { nextUid } from './state';
-import { mulberry32, randomSeed, type Rng } from './rng';
+import { mulberry32, randomSeed, shuffle, type Rng } from './rng';
 import type { GameState, Soldier, WeaponDef } from './types';
 
 export type BattleMode = 'training' | 'campaign' | 'daily' | 'survival' | 'fodder';
@@ -43,7 +43,7 @@ export interface SoldierReport {
   levelsGained: number;
   newLevel: number;
   died: boolean;
-  /** Tombé au combat mais rapatrié (victoire, ou entraînement) : il survit, sans XP. */
+  /** Tombé au combat mais rapatrié : il survit, sans XP. */
   wounded: boolean;
   kills: number;
   dealt: number;
@@ -98,16 +98,19 @@ export interface BattleReport {
   loot?: { gained: number; meter: number };
 }
 
+/** Part de l'XP d'un niveau regagnée en le rejouant. */
+export const REPLAY_XP = 0.4;
+
 export type BattleLaunch =
   | { ok: true; units: BattleUnit[]; result: BattleResult; report: BattleReport }
   | { ok: false; error: string };
 
 export function trainingXp(avgLevel: number): number {
-  return Math.round(40 + 10 * avgLevel);
+  return Math.round(30 + 6 * avgLevel);
 }
 
 export function trainingGold(avgLevel: number): number {
-  return Math.round(10 + 4 * avgLevel);
+  return Math.round(5 + 2 * avgLevel);
 }
 
 /** Un soldat sans entraînement gratuit peut encore s'entraîner en payant, sauf au niveau maximum. */
@@ -124,21 +127,21 @@ export function trainingFee(squad: readonly Soldier[]): number {
 }
 
 export function campaignXp(level: number): number {
-  return 30 + 10 * level;
+  return 25 + 7 * level;
 }
 
 export function campaignGold(level: number, firstClear: boolean): number {
-  return firstClear ? 40 + 15 * level : 12 + 4 * level;
+  return firstClear ? 30 + 10 * level : Math.round(8 + level / 2);
 }
 
 /** Récompense du défi du jour ; la série de jours consécutifs ajoute un bonus, plafonné à une semaine. */
 export function dailyGold(level: number, streak: number): number {
-  return 60 + 12 * level + 20 * Math.min(Math.max(streak - 1, 0), 6);
+  return 40 + 8 * level + 15 * Math.min(Math.max(streak - 1, 0), 6);
 }
 
 /** Or ajouté au pot de survie par chaque vague remportée. */
 export function survivalWaveGold(waveLevel: number): number {
-  return 10 + 6 * waveLevel;
+  return 6 + 2 * waveLevel;
 }
 
 /** Stats de combat de chaque soldat, tactique et synergies de l'escouade comprises. */
@@ -264,7 +267,25 @@ function setupBattle(st: GameState, req: BattleRequest): Setup | string {
 export function estimateBattle(st: GameState, req: BattleRequest, runs = ESTIMATE_RUNS, seed: number = randomSeed()): EstimateLaunch {
   const setup = setupBattle(st, req);
   if (typeof setup === 'string') return { ok: false, error: setup };
-  return { ok: true, ...estimateRuns(setup.allies, setup.enemies, runs, seed, req.mode === 'training' ? 'never' : 'onLoss') };
+  return { ok: true, ...estimateRuns(setup.allies, setup.enemies, runs, seed, canDie(req) ? 'onLoss' : 'never') };
+}
+
+/**
+ * Soldats perdus lors d'une défaite : un tiers des tombés, arrondi au supérieur. Une défaite signifiant que toute
+ * l'escouade est tombée, tuer tout le monde ferait repartir le joueur de zéro, sans issue.
+ */
+export function deathsAmong(fallen: number): number {
+  return Math.ceil(fallen * DEFEAT_DEATH_SHARE);
+}
+
+function pickCasualties(fallen: readonly string[], seed: number): Set<string> {
+  return new Set(shuffle(mulberry32(seed ^ 0x5bd1e995), [...fallen]).slice(0, deathsAmong(fallen.length)));
+}
+
+/** Une défaite peut-elle tuer les soldats tombés dans ce combat ? */
+function canDie(req: BattleRequest): boolean {
+  if (req.mode === 'campaign') return req.level > SAFE_LEVELS;
+  return req.mode !== 'training';
 }
 
 /** Quand les soldats tombés meurent vraiment : toujours (simulation, pour mesurer), sur défaite, ou jamais (entraînement). */
@@ -279,7 +300,7 @@ function estimateRuns(allies: BattleUnit[], enemies: (rng: Rng) => BattleUnit[],
     else if (result.winner === 'enemy') out.losses++;
     else out.timeouts++;
     out.avgDuration += (result.ticks * DT) / runs;
-    if (lethal === 'always' || (lethal === 'onLoss' && result.winner !== 'ally')) out.avgDeaths += result.deadIds.length / runs;
+    if (lethal === 'always' || (lethal === 'onLoss' && result.winner !== 'ally')) out.avgDeaths += (lethal === 'always' ? result.deadIds.length : deathsAmong(result.deadIds.length)) / runs;
   }
   return out;
 }
@@ -308,8 +329,8 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   const units = [...allies, ...enemies];
   const result = simulate(units, seed);
   const won = result.winner === 'ally';
-  // Une victoire permet de rapatrier les blessés, et l'entraînement n'est jamais mortel : seule une défaite tue
-  const lethal = req.mode !== 'training' && !won;
+  // Une victoire permet de rapatrier les blessés ; ni l'entraînement ni les premiers niveaux ne sont mortels
+  const lethal = !won && canDie(req);
 
   const firstClear = req.mode === 'campaign' && won && req.level === st.campaignLevel + 1;
   const avgLevel = squad.reduce((sum, s) => sum + s.level, 0) / squad.length;
@@ -317,12 +338,13 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
     req.mode === 'training' ? trainingXp(avgLevel)
     : req.mode === 'survival' ? campaignXp(level!) * 0.5
     : req.mode === 'daily' ? campaignXp(level!)
-    : campaignXp(req.level) * (firstClear ? 1 : 0.5);
+    : campaignXp(req.level) * (firstClear ? 1 : REPLAY_XP);
   const xp = won ? baseXp : baseXp * (req.mode === 'training' ? 0.5 : 0.4);
 
+  const casualties = lethal ? pickCasualties(result.deadIds, seed) : new Set<string>();
   const soldiers: SoldierReport[] = squad.map((s) => {
     const fell = result.deadIds.includes(s.id);
-    const died = fell && lethal;
+    const died = casualties.has(s.id);
     const gained = fell ? 0 : Math.round(xp * (1 + aggregateMods(s.upgrades).xpPct));
     const levelsGained = addXp(s, gained);
     grantLevelPicks(s);
@@ -334,8 +356,7 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
     if (died) st.stats.deaths++;
     return { id: s.id, name: s.name, xpGained: gained, levelsGained, newLevel: s.level, died, wounded: fell && !died, kills, dealt, taken, healed, healGiven };
   });
-  const dead = new Set(soldiers.filter((s) => s.died).map((s) => s.id));
-  st.soldiers = st.soldiers.filter((s) => !dead.has(s.id));
+  st.soldiers = st.soldiers.filter((s) => !casualties.has(s.id));
 
   const report: BattleReport = { mode: req.mode, level, won, timeout: result.winner === 'timeout', firstClear, gold: 0, weapon: null, soldiers, freePulls: 0, unlocked: [] };
   const grantWeapon = (w: WeaponDef) => {
@@ -395,8 +416,16 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   }
   st.gold += report.gold;
   st.freePulls += report.freePulls;
+  grantRescue(st, report);
 
   return { ok: true, units, result, report };
+}
+
+/** Plus de soldats ni de quoi en recruter : l'état-major envoie des renforts plutôt que de bloquer la partie. */
+function grantRescue(st: GameState, report: BattleReport): void {
+  if (st.soldiers.length > 0 || st.freePulls > 0 || st.gold >= PULL_COST) return;
+  st.freePulls = RESCUE_PULLS;
+  report.freePulls += RESCUE_PULLS;
 }
 
 /** Crans de garantie de recrutement rapportés par un soldat sacrifié, selon sa rareté. */
@@ -454,6 +483,7 @@ export function launchFodder(st: GameState, squadIds: string[], seed: number = r
     st.colossus.damage = damage + dealt;
   }
   report.colossus = { rank, dealt, left: killed ? 0 : hpBefore - dealt, maxHp, killed, pity: st.pity - pityBefore, weaponsLost: weaponsBefore - st.weapons.length };
+  grantRescue(st, report);
   return { ok: true, units, result, report };
 }
 

@@ -4,13 +4,15 @@ import type { CombatStats, Mods, Soldier, WeaponDef } from './types';
 export const BASE_HP = 90;
 export const BASE_SPEED = 70;
 
+/** Croissance géométrique : chaque niveau vaut +5 %, du premier au dernier, et l'XP reste comparable à l'équipement. */
 export function levelMult(level: number): number {
-  return 1 + 0.08 * (level - 1);
+  return 1.05 ** (level - 1);
 }
 
-// Départ plus lent qu'avant (55 XP au lieu de 40 pour le niveau 2), sans alourdir la fin de progression
+// Courbe quadratique : le niveau 30 doit arriver avec la fin de la campagne, pas au bout d'une heure
 export function xpForNext(level: number): number {
-  return 55 + 16 * (level - 1);
+  const l = level - 1;
+  return 70 + 30 * l + 4 * l * l;
 }
 
 export function aggregateMods(upgradeIds: readonly string[]): Mods {
@@ -69,10 +71,10 @@ export function dps(stats: CombatStats): number {
 export function powerScore(s: CombatStats): number {
   const hit = s.damage * (1 + s.crit) * (s.berserk && !s.heal ? 1.15 : 1);
   const rate = hit / s.cooldown;
-  const offense = rate * (1 + s.aoe / 80) * (s.ranged ? Math.pow(s.range / 150, 0.15) : Math.pow(s.speed / 70, 0.5));
+  const offense = rate * (1 + s.aoe / 80) * (s.ranged ? Math.pow(s.range / 150, 0.5) : 0.4 * Math.pow(s.speed / 70, 0.5));
   const ehp = (s.maxHp * (1 + s.armor / 100)) / (1 - s.dodge);
   const lifesteal = s.heal ? 0 : s.lifesteal;
-  const survival = (ehp + 20 * (s.regen * s.maxHp + lifesteal * rate)) * (s.secondWind ? 1.25 : 1);
+  const survival = (ehp + 20 * s.regen * s.maxHp + 6 * lifesteal * rate) * (s.secondWind ? 1.25 : 1);
   return Math.sqrt(Math.max(1, survival) * Math.max(0.1, offense));
 }
 

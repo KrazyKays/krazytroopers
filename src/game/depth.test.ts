@@ -7,7 +7,7 @@ import { claimGoal, claimableGoals } from './goals';
 import { unlockLevel } from './progress';
 import { mulberry32 } from './rng';
 import { createSoldier } from './roster';
-import { activePosition, synergyStatus } from './squad';
+import { activePosition, synergyStatus, TACTICS_BY_ID } from './squad';
 import { createInitialState, parseSave } from './state';
 import { computeStats } from './stats';
 import type { GameState } from './types';
@@ -57,7 +57,7 @@ describe('tactiques', () => {
     const base = computeStats(st.soldiers[0], WEAPONS_BY_ID.pistol);
     expect(squadStats(st, st.soldiers).get(st.soldiers[0].id)!.armor).toBe(base.armor);
     st.campaignLevel = unlockLevel('tactics');
-    expect(squadStats(st, st.soldiers).get(st.soldiers[0].id)!.armor).toBe(base.armor + 12);
+    expect(squadStats(st, st.soldiers).get(st.soldiers[0].id)!.armor).toBe(base.armor + TACTICS_BY_ID.bulwark.armor!);
   });
 
   it('la chasse aux blessés vise l’ennemi le plus entamé à portée', () => {

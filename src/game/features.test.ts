@@ -33,7 +33,7 @@ describe('rapatriement des blessés', () => {
   it('garde dans l’escouade les soldats tombés lors d’une victoire, sans XP', () => {
     let found = false;
     for (let seed = 1; seed < 200 && !found; seed++) {
-      const st = squadState(4, 4);
+      const st = squadState(4, 9);
       st.campaignLevel = 7;
       const r = launchBattle(st, { mode: 'campaign', squad: ids(st), level: 8 }, seed);
       if (!r.ok || !r.report.won || r.result.deadIds.length === 0) continue;
@@ -196,9 +196,9 @@ describe('armes à bonus', () => {
     const s = squadState(1, 1).soldiers[0];
     const base = computeStats(s, WEAPONS_BY_ID.pistol);
     const knife = computeStats(s, WEAPONS_BY_ID.knife);
-    expect(knife.dodge).toBeCloseTo(base.dodge + 0.08);
+    expect(knife.dodge).toBeCloseTo(base.dodge + WEAPONS_BY_ID.knife.dodge!);
     expect(knife.speed).toBeGreaterThan(base.speed);
-    expect(computeStats(s, WEAPONS_BY_ID.sword).lifesteal).toBeCloseTo(0.1);
+    expect(computeStats(s, WEAPONS_BY_ID.sword).lifesteal).toBeCloseTo(WEAPONS_BY_ID.sword.lifesteal!);
     expect(computeStats(s, WEAPONS_BY_ID.medic).heal).toBe(true);
     expect(computeStats(s, WEAPONS_BY_ID.medic).aoe).toBe(0);
   });

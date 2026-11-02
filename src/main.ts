@@ -1,5 +1,5 @@
 import './style.css';
-import { dailyDone, totalStars } from './game/combat';
+import { dailyDone } from './game/combat';
 import { claimableGoals } from './game/goals';
 import { isUnlocked } from './game/progress';
 import { getState, loadState, subscribe } from './game/state';
@@ -64,12 +64,11 @@ function render(): void {
   const st = getState();
   const tab = getTab();
   const def = TABS.find((t) => t.id === tab)!;
-  titleEl.replaceChildren(h('h1', null, def.label), h('span', { class: 'page-hint' }, def.hint));
+  titleEl.replaceChildren(h('h1', null, def.label));
+  // Seules les ressources à dépenser restent en vue : la progression de campagne a sa place dans l'onglet Combat
   resourcesEl.replaceChildren(
     resource('🪙', fmt(st.gold), 'Or disponible'),
-    resource('🎟️', String(st.freePulls), 'Tirages gratuits', st.freePulls > 0 ? () => goTo('recruit') : undefined),
-    resource('🚩', String(st.campaignLevel), 'Dernier niveau de campagne terminé'),
-    resource('⭐', String(totalStars(st)), 'Étoiles de campagne'),
+    ...(st.freePulls > 0 ? [resource('🎟️', String(st.freePulls), 'Tirages gratuits', () => goTo('recruit'))] : []),
   );
   navEl.replaceChildren(
     ...TABS.map((t) => {

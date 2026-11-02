@@ -1,8 +1,8 @@
 import { LEGEND_UPGRADES, LEGION_PICKS, MAX_LEVEL, PICK_LEVELS, RARITIES, RARITY_ORDER, TRAINING_PER_SOLDIER, UPGRADE_KINDS, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
-import { isUnlocked, squadMax, unlockLevel } from '../game/progress';
+import { isUnlocked } from '../game/progress';
 import { barracksCap, equipWeapon, NAME_MAX_LENGTH, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite, trainingCost } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
-import { computeStats, dps, powerScore, weaponForSoldier, xpForNext } from '../game/stats';
+import { computeStats, dps, powerScore, weaponForSoldier } from '../game/stats';
 import {
   autoPickAll,
   autoPickUnlocked,
@@ -14,16 +14,15 @@ import {
   recommendedUpgrade,
   rerollCost,
   rerollUpgrades,
-  statsWith,
   upgradeCap,
   upgradeGains,
   upgradeRank,
   upgradeSummary,
 } from '../game/upgrades';
-import type { CombatStats, GameState, Rarity, Soldier, WeaponDef } from '../game/types';
+import type { GameState, Rarity, Soldier, WeaponDef } from '../game/types';
 import { h } from './dom';
 import { goTo } from './nav';
-import { confirmDialog, familyTag, fmt, getSquadSort, openModal, positionPicker, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
+import { confirmDialog, familyTag, fmt, fold, getSquadSort, openModal, positionPicker, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
 
 
 const RARITY_PLURAL: Record<Rarity, string> = { common: 'communs', rare: 'rares', epic: 'épiques', legendary: 'légendaires' };
@@ -96,7 +95,6 @@ export function renderRoster(): HTMLElement {
       h('h2', { class: 'section-title' }, `Escouade · caserne ${st.soldiers.length} / ${barracksCap(st)}`),
       firstPending && !selectMode && h('button', { class: 'btn btn-primary', onclick: () => openSoldier(firstPending.id) }, `⬆ Choisir les améliorations (${pending})`),
     ),
-    h('p', { class: 'muted' }, `Touchez un soldat pour choisir ses améliorations et son arme. Engagez jusqu'à ${squadMax(st)} soldats par combat.`),
     squadToolbar(st),
     h(
       'div',
@@ -116,7 +114,7 @@ export function renderRoster(): HTMLElement {
       !selectMode &&
         (autoPickUnlocked(st)
           ? h('button', { class: 'btn btn-small', disabled: pending === 0, onclick: () => autoPickEverything(pending) }, `✨ Appliquer les conseils (${pending})`)
-          : pending > 0 && h('span', { class: 'muted small' }, `🔒 Choix automatique au niveau ${unlockLevel('autopick')} de la campagne`)),
+          : false),
     ),
     selectMode &&
       h(
@@ -264,42 +262,40 @@ export function openSoldier(id: string): void {
       h(
         'div',
         null,
-        renameForm(s),
+        h('h2', { class: 'detail-name' }, s.name),
         h('div', null, rarityTag(s.rarity), ` · Niveau ${s.level}${s.level >= MAX_LEVEL ? ' (max)' : ''}`, titleTags(s)),
         xpBar(s),
-        s.level < MAX_LEVEL && h('div', { class: 'muted small' }, `${fmt(s.xp)} / ${fmt(xpForNext(s.level))} XP`),
-        h('div', { class: 'muted small' }, `${s.kills} ennemi${s.kills > 1 ? 's' : ''} éliminé${s.kills > 1 ? 's' : ''}`),
-        h(
-          'div',
-          { class: 'row training-row' },
-          h(
-            'span',
-            { class: 'muted small' },
-            s.trainingsLeft > 0
-              ? `${s.trainingsLeft} entraînement${s.trainingsLeft > 1 ? 's' : ''} gratuit${s.trainingsLeft > 1 ? 's' : ''} restant${s.trainingsLeft > 1 ? 's' : ''}`
-              : s.level < MAX_LEVEL
-                ? `Entraînements gratuits épuisés : ${fmt(trainingCost(s))} or par entraînement, payé au lancement`
-                : 'Entraînements gratuits épuisés',
-          ),
-        ),
       ),
     );
 
     const statsBlock = h(
       'div',
-      { class: 'stats-grid' },
-      statRow('PV', fmt(stats.maxHp)),
-      statRow('Dégâts / coup', fmt(stats.damage, 1)),
-      statRow('DPS', fmt(dps(stats), 1)),
-      statRow('Portée', fmt(stats.range)),
-      statRow('Vitesse', fmt(stats.speed)),
-      statRow('Armure', fmt(stats.armor)),
-      statRow('Critique', `${fmt(stats.crit * 100)} %`),
-      statRow('Esquive', `${fmt(stats.dodge * 100)} %`),
+      { class: 'stats-grid stats-main' },
       statRow('Puissance', fmt(powerScore(stats))),
+      statRow('PV', fmt(stats.maxHp)),
+      statRow('DPS', fmt(dps(stats), 1)),
+    );
+    const statsMore = fold(
+      'soldier-stats',
+      'Statistiques détaillées',
+      [
+        h(
+          'div',
+          { class: 'stats-grid' },
+          statRow('Dégâts / coup', fmt(stats.damage, 1)),
+          statRow('Portée', fmt(stats.range)),
+          statRow('Vitesse', fmt(stats.speed)),
+          statRow('Armure', fmt(stats.armor)),
+          statRow('Critique', `${fmt(stats.crit * 100)} %`),
+          statRow('Esquive', `${fmt(stats.dodge * 100)} %`),
+          statRow('Éliminations', fmt(s.kills)),
+          statRow('Entraînements gratuits', s.trainingsLeft > 0 ? String(s.trainingsLeft) : s.level < MAX_LEVEL ? `0 (ensuite ${fmt(trainingCost(s))} or)` : '0'),
+        ),
+        renameForm(s),
+      ],
     );
 
-    const upgrades = upgradeBlock(st, s, weapon, stats);
+    const upgrades = upgradeBlock(st, s, weapon);
 
     const owners = new Map(st.soldiers.filter((x) => x.weaponUid).map((x) => [x.weaponUid as string, x]));
     const weaponList = h(
@@ -357,8 +353,9 @@ export function openSoldier(id: string): void {
       statsBlock,
       upgrades,
       legion,
-      isUnlocked(st, 'positions') && h('div', { class: 'upgrade-block' }, h('h3', null, 'Position au combat'), positionPicker(s)),
-      h('div', { class: 'upgrade-block' }, h('h3', null, `Arme : ${weapon.name} `, familyTag(weapon)), h('p', { class: 'muted small' }, "La famille de l'arme compte pour les synergies d'escouade (onglet Combat)."), weaponList),
+      fold('soldier-weapon', [`Arme : ${s.weaponUid ? weapon.name : 'aucune'} `, familyTag(weapon)], weaponList, !s.weaponUid),
+      isUnlocked(st, 'positions') && fold('soldier-position', 'Position au combat', positionPicker(s)),
+      statsMore,
       h(
         'div',
         { class: 'detail-actions' },
@@ -387,33 +384,6 @@ export function openSoldier(id: string): void {
 
 // ---------- Améliorations ----------
 
-const pct = (v: number) => `${fmt(v * 100)} %`;
-
-/** Statistiques comparées dans l'aperçu d'une amélioration. */
-const PREVIEW: { label: string; get: (c: CombatStats) => number; show: (v: number) => string }[] = [
-  { label: 'PV', get: (c) => c.maxHp, show: (v) => fmt(v) },
-  { label: 'DPS', get: (c) => dps(c), show: (v) => fmt(v, 1) },
-  { label: 'Armure', get: (c) => c.armor, show: (v) => fmt(v) },
-  { label: 'Critique', get: (c) => c.crit, show: pct },
-  { label: 'Esquive', get: (c) => c.dodge, show: pct },
-  { label: 'Vitesse', get: (c) => c.speed, show: (v) => fmt(v) },
-  { label: 'Portée', get: (c) => c.range, show: (v) => fmt(v) },
-  { label: 'Vol de vie', get: (c) => c.lifesteal, show: pct },
-  { label: 'Régén./s', get: (c) => c.regen, show: pct },
-  { label: 'Zone', get: (c) => c.aoe, show: (v) => fmt(v) },
-];
-
-function previewChips(before: CombatStats, after: CombatStats): HTMLElement {
-  const changed = PREVIEW.filter((p) => Math.abs(p.get(after) - p.get(before)) > 1e-6);
-  return h(
-    'span',
-    { class: 'choice-preview' },
-    changed.length === 0
-      ? h('small', { class: 'muted' }, 'Effet hors statistiques')
-      : changed.map((p) => h('small', { class: p.get(after) > p.get(before) ? 'up' : 'down' }, `${p.label} ${p.show(p.get(before))} → ${p.show(p.get(after))}`)),
-  );
-}
-
 /** Emplacements d'amélioration : pris, à choisir, puis verrouillés jusqu'à leur palier de niveau. */
 function slotTrack(s: Soldier): HTMLElement {
   const cap = upgradeCap(s);
@@ -431,7 +401,7 @@ function slotTrack(s: Soldier): HTMLElement {
   );
 }
 
-function upgradeBlock(st: GameState, s: Soldier, weapon: WeaponDef, stats: CombatStats): HTMLElement {
+function upgradeBlock(st: GameState, s: Soldier, weapon: WeaponDef): HTMLElement {
   const next = nextPickLevel(s);
   const block = h(
     'div',
@@ -451,7 +421,7 @@ function upgradeBlock(st: GameState, s: Soldier, weapon: WeaponDef, stats: Comba
     const legend = new Set(LEGEND_UPGRADES.map((u) => u.id));
     const cost = rerollCost(s);
     block.append(
-      h('p', { class: 'muted small' }, `Choisissez une amélioration${s.picksLeft > 1 ? ` (encore ${s.picksLeft} à choisir)` : ''}. L'aperçu tient compte de l'arme actuelle : ${weapon.name}.`),
+      h('p', { class: 'muted small' }, s.picksLeft > 1 ? `Encore ${s.picksLeft} à choisir.` : 'Choisissez une amélioration.'),
       h(
         'div',
         { class: 'choices' },
@@ -463,10 +433,9 @@ function upgradeBlock(st: GameState, s: Soldier, weapon: WeaponDef, stats: Comba
           return h(
             'button',
             { class: `choice kind-${u.kind}${legend.has(uid) ? ' choice-legend' : ''}${uid === best ? ' choice-best' : ''}`, onclick: () => mutate((state) => pickUpgrade(state, s.id, uid)) },
-            h('span', { class: 'choice-top' }, h('span', { class: 'choice-kind', title: kind.label }, kind.icon, ' ', kind.label), uid === best && h('span', { class: 'tag tag-accent' }, 'Conseillé')),
+            h('span', { class: 'choice-top' }, h('span', { class: 'choice-kind', title: kind.label }, kind.icon), uid === best && h('span', { class: 'tag tag-accent', title: `Selon l'arme actuelle : ${weapon.name}` }, 'Conseillé')),
             h('b', null, u.name, maxRank(u) > 1 && h('span', { class: 'rank' }, ` rang ${rank}/${maxRank(u)}`)),
             h('span', { class: 'choice-desc' }, u.desc),
-            previewChips(stats, statsWith(s, weapon, uid)),
             gain > 0.0005 && h('small', { class: 'choice-gain' }, `Puissance +${fmt(gain * 100, 1)} %`),
           );
         }),
@@ -494,23 +463,25 @@ function upgradeBlock(st: GameState, s: Soldier, weapon: WeaponDef, stats: Comba
   const owned = upgradeSummary(s);
   if (owned.length > 0) {
     block.append(
-      h(
-        'ul',
-        { class: 'upgrade-owned' },
-        owned.map(({ def, rank }) =>
-          h(
-            'li',
-            { class: `kind-${def.kind}` },
-            h('span', { class: 'choice-kind', title: UPGRADE_KINDS[def.kind].label }, UPGRADE_KINDS[def.kind].icon),
-            h('b', null, def.name),
-            maxRank(def) > 1 && h('span', { class: 'rank' }, `rang ${rank}/${maxRank(def)}`),
-            h('span', { class: 'muted small' }, def.desc),
+      fold(
+        'soldier-upgrades',
+        `Améliorations prises (${s.upgrades.length})`,
+        h(
+          'ul',
+          { class: 'upgrade-owned' },
+          owned.map(({ def, rank }) =>
+            h(
+              'li',
+              { class: `kind-${def.kind}` },
+              h('span', { class: 'choice-kind', title: UPGRADE_KINDS[def.kind].label }, UPGRADE_KINDS[def.kind].icon),
+              h('b', null, def.name),
+              maxRank(def) > 1 && h('span', { class: 'rank' }, `rang ${rank}/${maxRank(def)}`),
+              h('span', { class: 'muted small' }, def.desc),
+            ),
           ),
         ),
       ),
     );
-  } else if (s.picksLeft === 0) {
-    block.append(h('p', { class: 'muted small' }, 'Aucune amélioration pour le moment.'));
   }
   return block;
 }

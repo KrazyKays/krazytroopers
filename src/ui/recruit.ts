@@ -1,10 +1,10 @@
-import { PITY_LIMIT, PULL10_COST, PULL_COST, RARITIES, RARITY_ORDER, WEAPON_PULL10_COST, WEAPON_PULL_COST, WEAPONS, WEAPONS_BY_ID } from '../game/data';
+import { PITY_LIMIT, PULL10_COST, PULL_COST, RARITIES, RARITY_ORDER, WEAPON_PULL10_COST, WEAPON_PULL_COST, WEAPONS_BY_ID } from '../game/data';
 import { isUnlocked, unlockLevel } from '../game/progress';
 import { barracksCap, buyWeapons, nextBarracks, recruit } from '../game/roster';
 import { getState, mutate } from '../game/state';
 import type { WeaponDef } from '../game/types';
 import { h } from './dom';
-import { familyTag, fmt, soldierCard, toast, weaponIcon, weaponTraits } from './components';
+import { familyTag, fmt, fold, soldierCard, toast, weaponIcon, weaponTraits } from './components';
 import { playGacha } from './gacha';
 import { goTo } from './nav';
 import { openSoldier } from './roster';
@@ -102,13 +102,7 @@ function barracksPanel(cap: number, count: number): HTMLElement {
     'div',
     { class: `barracks${full ? ' full' : ''}` },
     h('div', { class: 'barracks-head' }, h('b', null, `🏕️ Caserne : ${count} / ${cap} soldats`), full && h('span', { class: 'tag tag-accent' }, 'PLEINE')),
-    h('div', { class: 'barracks-beds' }, Array.from({ length: cap }, (_, i) => h('span', { class: i < count ? 'bed used' : 'bed' }))),
-    h(
-      'small',
-      { class: 'muted' },
-      next ? `S'agrandit à ${next.cap} places au niveau ${next.level} de la campagne.` : 'Caserne à sa taille maximale.',
-      full && (isUnlocked(st, 'fodder') ? ' Renvoyez ou sacrifiez un soldat (Combat, Chair à canon) pour faire de la place.' : ' Renvoyez un soldat pour faire de la place.'),
-    ),
+    full && h('small', { class: 'muted' }, isUnlocked(st, 'fodder') ? 'Renvoyez ou sacrifiez un soldat pour faire de la place.' : 'Renvoyez un soldat pour faire de la place.', next && ` ${next.cap} places au niveau ${next.level} de la campagne.`),
   );
 }
 
@@ -149,12 +143,10 @@ export function renderRecruit(): HTMLElement {
   const bulk = isUnlocked(st, 'bulk');
   const bulkLock = `🔒 Niveau ${unlockLevel('bulk')} de la campagne`;
   const fullMsg = room <= 0 ? 'Caserne pleine' : undefined;
-  const legendaries = WEAPONS.filter((w) => w.droppable && w.rarity === 'legendary');
   const armoryOpen = isUnlocked(st, 'armory');
   return h(
     'section',
     null,
-    h('p', { class: 'muted' }, "Tirez de nouveaux soldats et de nouvelles armes au hasard. Plus la rareté est élevée, plus ils sont puissants. L'or provient des combats."),
     h(
       'div',
       { class: 'banners' },
@@ -164,7 +156,6 @@ export function renderRecruit(): HTMLElement {
         'Recrues',
         "Chaque recrue arrive avec une première amélioration à choisir.",
         barracksPanel(cap, st.soldiers.length),
-        ratesBar(),
         pityMeter(st.pity, 'Soldat'),
         h(
           'div',
@@ -179,9 +170,7 @@ export function renderRecruit(): HTMLElement {
         h('span', null, '✦'),
         'Armurerie',
         'Les armes achetées rejoignent votre arsenal, prêtes à être équipées.',
-        ratesBar(),
         armoryOpen && pityMeter(st.weaponPity, 'Arme'),
-        h('div', { class: 'banner-featured', title: 'Armes légendaires à gagner' }, legendaries.map((w) => h('div', { class: 'featured-weapon', title: w.name }, weaponIcon(w)))),
         !armoryOpen &&
           h('p', { class: 'locked-note' }, `🔒 L'armurerie ouvre après le niveau ${unlockLevel('armory')} de la campagne, qui offre déjà une arme garantie.`),
         armoryOpen && h(
@@ -192,6 +181,7 @@ export function renderRecruit(): HTMLElement {
         ),
       ),
     ),
+    fold('recruit-rates', 'Probabilités de tirage', ratesBar()),
     st.gold < Math.min(PULL_COST, WEAPON_PULL_COST) && st.freePulls <= 0 && h('p', { class: 'muted small' }, "Pas assez d'or ? Les combats (entraînement et campagne) en rapportent, tout comme le renvoi de soldats et la vente d'armes."),
   );
 }

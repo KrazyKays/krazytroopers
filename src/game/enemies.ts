@@ -1,4 +1,5 @@
 ﻿import { COLOSSUS_HP, COLOSSUS_HP_PER_RANK, WEAPONS_BY_ID } from './data';
+import { levelMult } from './stats';
 import { ARENA_W, type BattleUnit } from './battle';
 import { mulberry32, range, weightedPick, type Rng } from './rng';
 import type { CombatStats, SpriteLook, WeaponDef } from './types';
@@ -36,18 +37,12 @@ export const BOSS_EVERY = 5;
 export const isBossLevel = (level: number): boolean => level % BOSS_EVERY === 0;
 
 /**
- * Multiplicateur de puissance des ennemis de campagne. Légèrement quadratique : les soldats montent en
- * puissance (niveau, améliorations, armes) plus vite qu'une courbe linéaire, et la fin de campagne doit le suivre.
- * Les premiers niveaux sont relevés (voir EARLY_BUMP) : quelques entraînements s'imposent entre eux, le temps de
- * découvrir chaque mécanique avant que l'escouade ne grandisse.
+ * Puissance de base d'un ennemi selon le niveau : sert à l'entraînement et à la simulation. Pour les vrais combats,
+ * l'armée est ensuite recalée sur le budget de menace du niveau (voir fitToBudget).
  */
 export function levelPower(level: number): number {
-  return (0.5 + 0.035 * level + 0.0012 * level * level) * (1 + EARLY_BUMP * Math.max(0, 1 - level / EARLY_LEVELS));
+  return 0.5 + 0.035 * level + 0.0012 * level * level;
 }
-
-/** Surcoût de puissance des tout premiers niveaux, qui s'estompe jusqu'au niveau EARLY_LEVELS. */
-const EARLY_BUMP = 0.8;
-const EARLY_LEVELS = 12;
 
 /** Troupes ennemies, pour les présenter dans le wiki. */
 export const ENEMY_TEMPLATES: readonly Pick<Template, 'name' | 'weapon' | 'minLevel'>[] = TEMPLATES;
@@ -123,6 +118,49 @@ function compose(level: number, count: number, rng: Rng): Template[] {
   return Array.from({ length: count }, () => weightedPick(rng, entries));
 }
 
+/**
+ * Menace d'une unité : racine de sa résistance par son efficacité offensive, à la manière des lois de Lanchester
+ * (la force d'une armée croît avec le carré de la somme de ces valeurs). Coefficients mesurés en simulation : à budget
+ * égal, la portée pèse très lourd (un tireur d'élite tire sans riposte) et la mêlée peu (elle meurt en traversant le feu).
+ */
+function threat(s: CombatStats): number {
+  const offense = (s.damage / s.cooldown) * (1 + s.aoe / 80) * (s.ranged ? Math.pow(s.range / 150, 1.3) : 0.4);
+  return Math.sqrt(s.maxHp * (1 + s.armor / 100) * offense);
+}
+
+/** Les boss restent un cran au-dessus des niveaux qui les entourent. */
+const BOSS_BUDGET = 1.05;
+/** Menace d'un soldat de niveau 1 bien équipé, mesurée en simulation : l'unité de mesure du budget. */
+const THREAT_PER_SOLDIER = 164;
+
+/**
+ * Budget de menace d'un niveau : la force qu'on attend du joueur à ce stade, et non une courbe arbitraire.
+ * Il suit l'escouade prévue (3 à 6 soldats), leur niveau prévu (les soldats progressent moins vite que la campagne)
+ * et leur équipement prévu (améliorations, armes et recrues plus rares). Il est continu : une place d'escouade
+ * ou une arme légendaire sont de vrais soulagements, que les niveaux suivants rattrapent peu à peu.
+ */
+export function threatBudget(level: number): number {
+  const squad = 3 + (3 * Math.min(level, 25)) / 25;
+  const soldier = levelMult(1 + 0.72 * (level - 1));
+  // L'escouade de départ n'a que des armes communes : son retard est comblé sur les premiers niveaux
+  const gear = 0.14 + 0.44 * Math.min(1, (level - 1) / 10);
+  return THREAT_PER_SOLDIER * squad * soldier * gear;
+}
+
+/**
+ * Recale une armée sur le budget de son niveau. Sans cela, un ennemi de plus ou un tirage riche en Brutes
+ * crée un mur isolé : la composition doit changer la manière de jouer un combat, pas sa difficulté.
+ */
+function fitToBudget(units: BattleUnit[], level: number, bossLevel: boolean): BattleUnit[] {
+  const total = units.reduce((sum, u) => sum + threat(u.stats), 0);
+  const k = (threatBudget(level) * (bossLevel ? BOSS_BUDGET : 1)) / total;
+  for (const u of units) {
+    u.stats.maxHp *= k;
+    u.stats.damage *= k;
+  }
+  return units;
+}
+
 /** Armée « normale » d'un niveau : `bosses` d'entre eux remplacent autant de soldats. */
 function army(level: number, count: number, bosses: number, rng: Rng, mods: ArmyMods = {}, forced?: Template, elites = 0): BattleUnit[] {
   const m = levelPower(level);
@@ -135,14 +173,14 @@ function army(level: number, count: number, bosses: number, rng: Rng, mods: Army
 }
 
 export function buildCampaignEnemies(level: number): BattleUnit[] {
-  return army(level, campaignEnemyCount(level), isBossLevel(level) ? 1 : 0, mulberry32(level * 7919 + 13), {}, undefined, eliteCount(level));
+  return fitToBudget(army(level, campaignEnemyCount(level), isBossLevel(level) ? 1 : 0, mulberry32(level * 7919 + 13), {}, undefined, eliteCount(level)), level, isBossLevel(level));
 }
 
 function makeBoss(level: number, index: number, m: number, mods: ArmyMods = {}): BattleUnit {
   // le boss du palier de 5 niveaux en cours (niveaux 1 à 5 → premier boss)
   const k = Math.max(0, Math.ceil(level / BOSS_EVERY) - 1);
   const weapon = WEAPONS_BY_ID[BOSS_WEAPONS[k % BOSS_WEAPONS.length]];
-  const bossT: Template = { id: 'boss', name: BOSS_NAMES[k % BOSS_NAMES.length], hp: 450, power: 0.9, speed: 55, armor: 15, weapon: weapon.id, minLevel: 1, weight: 0, uniform: '#5a1a1a', helmet: '#d4a017' };
+  const bossT: Template = { id: 'boss', name: BOSS_NAMES[k % BOSS_NAMES.length], hp: 320, power: 0.75, speed: 55, armor: 10, weapon: weapon.id, minLevel: 1, weight: 0, uniform: '#5a1a1a', helmet: '#d4a017' };
   return makeEnemy(bossT, weapon, index, m, 1.6, bossT.name, mods);
 }
 
@@ -192,6 +230,10 @@ export function dailyLevel(campaignLevel: number): number {
 
 /** Ennemis du défi : identiques pour toute la journée, quel que soit le nombre d'estimations. */
 export function buildDailyEnemies(key: string, level: number): BattleUnit[] {
+  return fitToBudget(dailyArmy(key, level), level, false);
+}
+
+function dailyArmy(key: string, level: number): BattleUnit[] {
   const rng = mulberry32(keySeed(key) ^ (level * 2654435761));
   const count = campaignEnemyCount(level);
   const byId = (id: string) => TEMPLATES.find((t) => t.id === id)!;
@@ -225,7 +267,7 @@ export function survivalWaveLevel(wave: number, campaignLevel: number): number {
 /** Une vague sur 5 est menée par un boss. */
 export function buildSurvivalEnemies(wave: number, campaignLevel: number, rng: Rng): BattleUnit[] {
   const level = survivalWaveLevel(wave, campaignLevel);
-  return army(level, campaignEnemyCount(level), isBossLevel(wave) ? 1 : 0, rng, {}, undefined, eliteCount(level));
+  return fitToBudget(army(level, campaignEnemyCount(level), isBossLevel(wave) ? 1 : 0, rng, {}, undefined, eliteCount(level)), level, isBossLevel(wave));
 }
 
 // ---------- Chair à canon ----------

@@ -260,11 +260,6 @@ input[type='checkbox'] {
   font-size: 1.4rem;
 }
 
-.page-hint {
-  font-size: 0.85rem;
-  color: var(--muted);
-}
-
 .resources {
   display: flex;
   flex-wrap: wrap;
@@ -814,28 +809,8 @@ input[type='checkbox'] {
   background: var(--surface-2);
 }
 
-.quick-head {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 1.05rem;
-}
-
 .quick-icon {
   font-size: 1.4rem;
-}
-
-.quick-lines {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  gap: 0.25rem;
-  font-size: 0.87rem;
-}
-
-.quick-cta {
-  font-weight: 700;
-  color: var(--primary);
 }
 
 .home-cols {
@@ -918,37 +893,6 @@ input[type='checkbox'] {
 .mini-soldier .sprite {
   width: 46px;
   height: auto;
-}
-
-.kpis {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 0.5rem;
-  margin-top: 0.6rem;
-}
-
-.kpi {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 0.5rem 0.3rem;
-  text-align: center;
-  background: var(--surface-2);
-  border-radius: 10px;
-}
-
-.kpi b {
-  font-size: 1.2rem;
-  font-variant-numeric: tabular-nums;
-}
-
-.kpi span {
-  font-size: 0.72rem;
-  color: var(--muted);
-}
-
-.kpi-warn b {
-  color: var(--accent);
 }
 
 /* ---------- Raretés (cartes, emplacements) ---------- */
@@ -1247,7 +1191,7 @@ input[type='checkbox'] {
 
 .mode-tabs {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 0.5rem;
 }
 
@@ -1437,17 +1381,6 @@ input[type='checkbox'] {
   border-color: color-mix(in srgb, var(--warn) 50%, transparent);
 }
 
-.elite-notes {
-  display: flex;
-  flex-direction: column;
-  gap: 0.3rem;
-  width: 100%;
-}
-
-.elite-notes .note {
-  padding: 0.3rem 0.6rem;
-}
-
 .rewards {
   display: flex;
   flex-wrap: wrap;
@@ -1612,12 +1545,6 @@ input[type='checkbox'] {
   color: var(--muted);
   white-space: nowrap;
   text-overflow: ellipsis;
-}
-
-.prep-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 0.8rem;
 }
 
 .prep-block h4 {
@@ -2574,10 +2501,6 @@ input[type='checkbox'] {
   gap: 0.5rem;
 }
 
-.training-row {
-  margin-top: 0.2rem;
-}
-
 /* ---------- Notifications ---------- */
 
 .toasts {
@@ -2706,26 +2629,6 @@ input[type='checkbox'] {
 .pity-fill {
   height: 100%;
   background: linear-gradient(90deg, #8b3fd9, #d4860b);
-}
-
-.banner-featured {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.featured-weapon {
-  display: grid;
-  place-items: center;
-  width: 54px;
-  height: 44px;
-  background: #fff7e2;
-  border: 1px solid color-mix(in srgb, var(--star) 50%, var(--line));
-  border-radius: 10px;
-}
-
-.featured-weapon .weapon-icon {
-  width: 36px;
-  height: 30px;
 }
 
 .recruit-box {
@@ -3499,10 +3402,6 @@ input[type='checkbox'] {
     padding: 0.6rem 16px;
   }
 
-  .page-hint {
-    display: none;
-  }
-
   .content {
     padding: 0.9rem 16px 9rem;
   }
@@ -3516,8 +3415,7 @@ input[type='checkbox'] {
     width: 100%;
   }
 
-  .stats-grid,
-  .kpis {
+  .stats-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -3639,26 +3537,6 @@ input[type='checkbox'] {
   color: var(--muted);
 }
 
-.choice-preview {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.2rem 0.5rem;
-  margin-top: 0.15rem;
-}
-
-.choice-preview small {
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-}
-
-.choice-preview .up {
-  color: var(--good);
-}
-
-.choice-preview .down {
-  color: var(--bad);
-}
-
 .choice-gain {
   font-weight: 800;
   color: var(--primary-strong);
@@ -3707,23 +3585,6 @@ input[type='checkbox'] {
   justify-content: space-between;
 }
 
-.barracks-beds {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 3px;
-}
-
-.bed {
-  width: 14px;
-  height: 14px;
-  background: var(--surface-3);
-  border-radius: 4px;
-}
-
-.bed.used {
-  background: var(--primary);
-}
-
 .meters {
   display: flex;
   flex-direction: column;
@@ -3732,4 +3593,132 @@ input[type='checkbox'] {
 
 .progress-loot .progress-fill {
   background: linear-gradient(90deg, var(--accent), var(--star));
+}
+
+/* ---------- Hiérarchie : blocs repliés et mission principale ---------- */
+
+.fold {
+  border-top: 1px solid var(--line);
+}
+
+.fold-label {
+  padding: 0.55rem 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.fold-label:hover {
+  color: inherit;
+}
+
+.fold-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding-bottom: 0.75rem;
+}
+
+.prep-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+
+.missions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.mission-main {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  padding: 1.25rem 1.5rem;
+  text-align: left;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  cursor: pointer;
+}
+
+.mission-main.boss {
+  border-color: #b3261e;
+}
+
+.mission-eyebrow {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.mission-title {
+  font-size: 1.9rem;
+  line-height: 1.15;
+}
+
+.mission-cta {
+  margin-top: 0.6rem;
+}
+
+.quick-card {
+  flex-direction: row;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.7rem 0.85rem;
+  box-shadow: none;
+}
+
+.quick-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.quick-card.next-unlock {
+  background: transparent;
+  border-style: dashed;
+  cursor: default;
+}
+
+.quick-card.next-unlock:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.card-sub {
+  justify-content: space-between;
+}
+
+.card-power {
+  font-weight: 700;
+}
+
+.detail-name {
+  margin: 0 0 0.2rem;
+}
+
+.stats-main {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.stats-main .stat-row {
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.stats-main .stat-row b {
+  font-size: 1.3rem;
+}
+
+.result-actions + .fold {
+  margin-top: 0.75rem;
 }

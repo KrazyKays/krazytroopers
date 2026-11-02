@@ -1,11 +1,11 @@
 import { FORGE_FEE, FORGE_INPUT, RARITIES, RARITY_ORDER, WEAPONS_BY_ID } from '../game/data';
-import { isUnlocked, unlockLevel } from '../game/progress';
+import { isUnlocked } from '../game/progress';
 import { equipWeapon, forgeableWeapons, forgeWeapons, sellWeapons, sortSquad } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
 import { weaponForSoldier } from '../game/stats';
 import type { GameState, Rarity, WeaponItem } from '../game/types';
 import { h } from './dom';
-import { confirmDialog, familyTag, fmt, getSquadSort, openModal, rarityTag, soldierSprite, toast, undoable, weaponDelta, weaponIcon, weaponTraits } from './components';
+import { confirmDialog, familyTag, fmt, fold, getSquadSort, openModal, rarityTag, soldierSprite, toast, undoable, weaponDelta, weaponIcon, weaponTraits } from './components';
 import { playGacha } from './gacha';
 import { weaponFront } from './recruit';
 import { goTo } from './nav';
@@ -123,14 +123,13 @@ function forge(rarity: Rarity): void {
 // Forge : les doublons d'une rareté deviennent une arme de la rareté supérieure (seules les armes non équipées partent)
 function forgePanel(st: GameState): HTMLElement | false {
   if (st.weapons.length === 0) return false;
-  if (!isUnlocked(st, 'forge')) {
-    return h('p', { class: 'muted small locked-note' }, `🔒 Forge : fusionnez ${FORGE_INPUT} armes d'une rareté en une arme de la rareté supérieure. Se débloque au niveau ${unlockLevel('forge')} de la campagne.`);
-  }
+  if (!isUnlocked(st, 'forge')) return false;
   const rarities = RARITY_ORDER.filter((r): r is Exclude<Rarity, 'legendary'> => r !== 'legendary');
-  return h(
+  const ready = rarities.filter((r) => forgeableWeapons(st, r).length >= FORGE_INPUT && st.gold >= FORGE_FEE[r]).length;
+  return fold(`arsenal-forge`, `⚒️ Forge${ready > 0 ? ` : ${ready} fusion${ready > 1 ? 's' : ''} possible${ready > 1 ? 's' : ''}` : ''}`, h(
     'div',
     { class: 'bulk-bar forge-bar' },
-    h('span', { class: 'muted small' }, `Forge (${FORGE_INPUT} armes non équipées → 1 de rareté supérieure) :`),
+    h('span', { class: 'muted small' }, `${FORGE_INPUT} armes non équipées → 1 de rareté supérieure`),
     rarities.map((r) => {
       const have = forgeableWeapons(st, r).length;
       const fee = FORGE_FEE[r];
@@ -147,7 +146,7 @@ function forgePanel(st: GameState): HTMLElement | false {
         `${RARITY_PLURAL[r]} (${have}/${FORGE_INPUT}) → ${RARITIES[next].label} · ${fee} or`,
       );
     }),
-  );
+  ));
 }
 
 export function renderArsenal(): HTMLElement {
@@ -168,13 +167,6 @@ export function renderArsenal(): HTMLElement {
     'section',
     null,
     h('h2', { class: 'section-title' }, `Arsenal (${st.weapons.length})`),
-    h(
-      'p',
-      { class: 'muted' },
-      "Les armes s'obtiennent en campagne ou à l'",
-      h('button', { class: 'link', onclick: () => goTo('recruit') }, 'armurerie'),
-      ". Équipez-les avec « Équiper sur… », ou vendez les doublons pour de l'or.",
-    ),
     unarmed > 0 &&
       free > 0 &&
       h(
@@ -183,19 +175,22 @@ export function renderArsenal(): HTMLElement {
         `${unarmed} soldat${unarmed > 1 ? 's' : ''} sans arme alors que ${free} arme${free > 1 ? 's sont disponibles' : ' est disponible'}. `,
         h('button', { class: 'link', onclick: () => goTo('roster') }, "Aller à l'escouade"),
       ),
-    st.weapons.length > 0 &&
-      h(
-        'div',
-        { class: 'bulk-bar' },
-        h('span', { class: 'muted small' }, 'Vendre les armes non équipées :'),
-        RARITY_ORDER.map((r) => {
-          const items = sellableWeapons(r);
-          return h(
-            'button',
-            { class: 'btn btn-small btn-rarity', disabled: items.length === 0, onclick: () => void sellItems(items) },
-            `${RARITY_PLURAL[r]} (${items.length})`,
-          );
-        }),
+    sellable.length > 0 &&
+      fold(
+        'arsenal-sell',
+        `Vendre en lot (${sellable.length} non équipées)`,
+        h(
+          'div',
+          { class: 'bulk-bar' },
+          RARITY_ORDER.map((r) => {
+            const items = sellableWeapons(r);
+            return h(
+              'button',
+              { class: 'btn btn-small btn-rarity', disabled: items.length === 0, onclick: () => void sellItems(items) },
+              `${RARITY_PLURAL[r]} (${items.length})`,
+            );
+          }),
+        ),
       ),
     forgePanel(st),
     selected.size > 0 &&
@@ -245,17 +240,15 @@ export function renderArsenal(): HTMLElement {
               h(
                 'div',
                 { class: 'weapon-stats' },
-                statItem('Dégâts', fmt(def.damage)),
-                statItem('Portée', fmt(def.range)),
-                statItem('Recharge', `${fmt(def.cooldown, 2)} s`),
                 statItem('DPS', fmt(def.damage / def.cooldown, 1)),
+                statItem('Portée', fmt(def.range)),
                 def.aoe ? statItem('Zone', fmt(def.aoe)) : false,
                 def.armor ? statItem('Armure', `+${fmt(def.armor)}`) : false,
               ),
               weaponTraits(def).length > 0 && h('small', { class: 'weapon-traits' }, weaponTraits(def).join(' · ')),
               owner
-                ? h('small', { class: 'owner' }, `${info.label} · Équipée par `, h('button', { class: 'link', title: 'Ouvrir la fiche du soldat', onclick: () => openSoldier(owner.id) }, owner.name))
-                : h('small', { class: 'muted' }, `${info.label} · Disponible`),
+                ? h('small', { class: 'owner' }, 'Équipée par ', h('button', { class: 'link', title: 'Ouvrir la fiche du soldat', onclick: () => openSoldier(owner.id) }, owner.name))
+                : h('small', { class: 'muted' }, 'Disponible'),
               h(
                 'div',
                 { class: 'weapon-actions' },

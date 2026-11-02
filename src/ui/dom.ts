@@ -20,6 +20,8 @@ type Props = {
   oninput?: (e: Event) => void;
   onsubmit?: (e: Event) => void;
   maxlength?: number;
+  open?: boolean;
+  ontoggle?: (e: Event) => void;
 };
 
 export function h<K extends keyof HTMLElementTagNameMap>(tag: K, props?: Props | null, ...children: Child[]): HTMLElementTagNameMap[K] {

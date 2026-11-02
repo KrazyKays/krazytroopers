@@ -19,6 +19,7 @@ import {
   PITY_LIMIT,
   PULL10_COST,
   PULL_COST,
+  SAFE_LEVELS,
   RARITIES,
   RARITY_ORDER,
   SQUAD_BASE,
@@ -122,7 +123,7 @@ function sections(st: GameState): Section[] {
           body: [
             list(
               [b('Victoire : '), 'il est rapatrié, sans XP.'],
-              [b('Défaite ou temps écoulé : '), 'il meurt définitivement, en campagne, au défi du jour comme en survie.'],
+              [b('Défaite ou temps écoulé : '), `un tiers des soldats tombés meurt définitivement (arrondi au supérieur), les autres sont rapatriés sans XP. C’est valable en campagne, au défi du jour et en survie. Les ${SAFE_LEVELS} premiers niveaux de campagne ne tuent personne.`],
               [b('Entraînement et simulation : '), 'il ne risque rien.'],
               [b('Chair à canon : '), 'tout soldat engagé est perdu, même en cas de victoire.'],
             ),
@@ -134,7 +135,7 @@ function sections(st: GameState): Section[] {
         },
         {
           title: 'Que se passe-t-il si le combat dure trop longtemps ?',
-          body: [p('Un combat s’arrête après 120 secondes de jeu. Sans vainqueur, il compte comme une défaite : les soldats déjà tombés meurent, les autres survivent et gagnent l’XP réduite d’une défaite.')],
+          body: [p('Un combat s’arrête après 120 secondes de jeu. Sans vainqueur, il compte comme une défaite : un tiers des soldats déjà tombés meurt, et ceux restés debout gagnent l’XP réduite d’une défaite.')],
         },
         {
           title: 'Le vol de vie fonctionne-t-il sur les dégâts de zone ?',
@@ -166,7 +167,7 @@ function sections(st: GameState): Section[] {
         },
         {
           title: 'Pourquoi rejouer d’anciens niveaux ?',
-          body: [p('Pour décrocher les étoiles manquantes, remplir la jauge de butin et gagner de l’or et de l’XP. Un niveau rejoué rapporte toutefois moins d’or et deux fois moins d’XP que sa première victoire, et une défaite y reste mortelle.')],
+          body: [p('Pour décrocher les étoiles manquantes, remplir la jauge de butin et gagner de l’or et de l’XP. Un niveau rejoué rapporte toutefois bien moins d’or et d’XP que sa première victoire, et une défaite y reste mortelle au-delà des premiers niveaux.')],
         },
       ],
     },
@@ -228,7 +229,7 @@ function sections(st: GameState): Section[] {
         },
         {
           title: 'Statistiques et niveaux',
-          body: [p(`Base : ${BASE_HP} PV et une vitesse de ${BASE_SPEED}. Chaque soldat a un tirage individuel de ±10 % en PV, dégâts et vitesse. Chaque niveau ajoute 8 % de PV et de dégâts par rapport au niveau 1, sans changer la vitesse. Le niveau maximum est ${MAX_LEVEL}.`)],
+          body: [p(`Base : ${BASE_HP} PV et une vitesse de ${BASE_SPEED}. Chaque soldat a un tirage individuel de ±10 % en PV, dégâts et vitesse. Chaque niveau multiplie les PV et les dégâts par 1,05, sans changer la vitesse. Le niveau maximum est ${MAX_LEVEL}.`)],
         },
         {
           title: 'Expérience',
@@ -269,7 +270,7 @@ function sections(st: GameState): Section[] {
         },
         {
           title: 'Mêlée ou distance ?',
-          body: [p('Les armes de mêlée frappent plus fort et apportent des bonus de survie, mais leur porteur doit traverser le feu ennemi. Les boucliers apportent beaucoup d’armure et activent Couverture pour toute l’escouade.')],
+          body: [p('Les armes de mêlée frappent fort et apportent armure, vitesse ou vol de vie, car leur porteur doit traverser le feu ennemi. Les boucliers apportent beaucoup d’armure et activent Couverture pour toute l’escouade.')],
         },
         {
           title: 'Acheter, vendre, forger',

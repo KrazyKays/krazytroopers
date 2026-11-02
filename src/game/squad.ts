@@ -17,9 +17,9 @@ export interface TacticDef {
 
 export const TACTICS: TacticDef[] = [
   { id: 'balanced', name: 'Équilibrée', icon: '⚖️', desc: 'Aucun bonus ni malus : chacun vise l’ennemi le plus proche.' },
-  { id: 'assault', name: 'Assaut', icon: '⚡', desc: '+25 % vitesse et +10 % dégâts, mais −10 % PV. Idéal pour la mêlée et contre les tireurs.', speedPct: 0.25, dmgPct: 0.1, hpPct: -0.1 },
-  { id: 'bulwark', name: 'Rempart', icon: '🛡️', desc: '+12 armure et +10 % PV, mais −25 % vitesse. Laissez l’ennemi venir à vous.', armor: 12, hpPct: 0.1, speedPct: -0.25 },
-  { id: 'hunters', name: 'Chasse aux blessés', icon: '🎯', desc: 'Vise l’ennemi le plus affaibli à portée pour achever les cibles plus vite, −5 % dégâts.', dmgPct: -0.05, focusWeak: true },
+  { id: 'assault', name: 'Assaut', icon: '⚡', desc: '+15 % vitesse et +12 % dégâts, mais −10 % PV. Idéal pour la mêlée et contre les tireurs.', speedPct: 0.15, dmgPct: 0.12, hpPct: -0.1 },
+  { id: 'bulwark', name: 'Rempart', icon: '🛡️', desc: '+6 armure et +5 % PV, mais −25 % vitesse et −10 % dégâts. Laissez l’ennemi venir à vous.', armor: 6, hpPct: 0.05, speedPct: -0.25, dmgPct: -0.1 },
+  { id: 'hunters', name: 'Chasse aux blessés', icon: '🎯', desc: 'Vise l’ennemi le plus affaibli à portée pour achever les cibles plus vite, +5 % dégâts.', dmgPct: 0.05, focusWeak: true },
 ];
 
 export const TACTICS_BY_ID = Object.fromEntries(TACTICS.map((t) => [t.id, t])) as Record<TacticId, TacticDef>;

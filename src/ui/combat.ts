@@ -1,4 +1,4 @@
-﻿import { COLOSSUS_PULLS, DAILY_PULL_EVERY, LOOT_FIRST_CLEAR, PITY_LIMIT, RARITIES, RARITY_ORDER, LOOT_METER_MAX, LOOT_REPLAY, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, TRAINING_PER_SOLDIER, type UnlockId } from '../game/data';
+﻿import { COLOSSUS_PULLS, DAILY_PULL_EVERY, LOOT_FIRST_CLEAR, PITY_LIMIT, RARITIES, RARITY_ORDER, LOOT_METER_MAX, LOOT_REPLAY, SAFE_LEVELS, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, TRAINING_PER_SOLDIER, type UnlockId } from '../game/data';
 import {
   campaignGold,
   campaignXp,
@@ -14,6 +14,7 @@ import {
   launchBattle,
   launchFodder,
   launchSimulation,
+  REPLAY_XP,
   squadStats,
   starGold,
   survivalWaveGold,
@@ -49,7 +50,7 @@ import { weaponForSoldier } from '../game/stats';
 import type { GameState, Soldier } from '../game/types';
 import { h } from './dom';
 import { openBattle } from './battleView';
-import { confirmDialog, fmt, getSquadSort, positionPicker, progressBar, soldierSprite, squadToolbar, squadView, stars, toast } from './components';
+import { confirmDialog, fmt, fold, getSquadSort, positionPicker, progressBar, soldierSprite, squadToolbar, squadView, stars, toast } from './components';
 import { goTo } from './nav';
 import { openSoldier } from './roster';
 
@@ -328,8 +329,7 @@ function enemyChips(prev: ArmyPreview): HTMLElement {
     'div',
     { class: 'enemy-list' },
     prev.groups.map((g) => h('span', { class: `enemy-chip${g.name.includes("d'élite") ? ' elite' : ''}` }, `${g.count} × ${g.name}`)),
-    prev.elites.length > 0 &&
-      h('div', { class: 'elite-notes' }, prev.elites.map((a) => h('span', { class: 'note note-warn small' }, h('b', null, `Élite ${a.name}`), ` : ${a.desc}`))),
+    prev.elites.map((a) => h('span', { class: 'enemy-chip elite', title: a.desc }, `Élite ${a.name}`)),
   );
 }
 
@@ -425,7 +425,7 @@ function dailyInfo(st: GameState): HTMLElement {
     done
       ? h('p', { class: 'note note-good' }, `Défi déjà tenté. Revenez demain${st.dailyStreak > 0 ? ` pour prolonger votre série (${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''})` : ''} !`)
       : rewards(`🪙 ${fmt(dailyGold(level, streakNext))} or`, streakNext % DAILY_PULL_EVERY === 0 && '🎟️ 1 tirage', '🔫 arme de boss', `✨ ${fmt(campaignXp(level))} XP`),
-    h('p', { class: 'muted small' }, `Une seule tentative par jour. Série : ${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''} (+20 or par jour consécutif, jusqu'à 7 ; 1 tirage gratuit toutes les ${DAILY_PULL_EVERY} victoires d'affilée). Une défaite remet la série à zéro et les soldats tombés meurent.`),
+    h('p', { class: 'muted small' }, `Une seule tentative par jour. Série : ${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''} (+20 or par jour consécutif, jusqu'à 7 ; 1 tirage gratuit toutes les ${DAILY_PULL_EVERY} victoires d'affilée). Une défaite remet la série à zéro et un tiers des tombés meurt.`),
   );
 }
 
@@ -437,7 +437,7 @@ function survivalInfo(st: GameState): HTMLElement {
       '🔥',
       'Survie',
       h('p', null, `Enchaînez des vagues de plus en plus fortes, à partir de la puissance du niveau ${base}. Chaque vague gagnée remplit le pot (${fmt(survivalWaveGold(base))} or pour la première) ; un boss lâche une arme toutes les 5 vagues.`),
-      h('p', { class: 'note note-warn' }, `Pas de soin complet : chaque soldat ne récupère que ${Math.round(SURVIVAL_REST_HEAL * 100)} % de ses PV entre deux vagues. Une défaite ne laisse que la moitié du pot, et les soldats tombés meurent.`),
+      h('p', { class: 'note note-warn' }, `Pas de soin complet : chaque soldat ne récupère que ${Math.round(SURVIVAL_REST_HEAL * 100)} % de ses PV entre deux vagues. Une défaite ne laisse que la moitié du pot, et un tiers des tombés meurt.`),
       h('p', { class: 'muted small' }, `Record : vague ${st.bestWave}.`),
     );
   }
@@ -503,19 +503,20 @@ function campaignInfo(st: GameState, level: number): HTMLElement {
       h('div', { class: 'brief-stars' }, h('span', { class: 'muted small' }, 'Record'), stars(best, 3, 'stars-big')),
       level < nextLevel && h('button', { class: 'btn btn-small', onclick: () => { campaignPick = null; refresh(); } }, `Aller au niveau ${nextLevel} →`),
     ),
-    h('p', { class: 'muted small' }, `${prev.count} ennemis`),
     enemyChips(prev),
     cleared
-      ? rewards(`✨ ${fmt(campaignXp(level) / 2)} XP`, `🪙 ${fmt(campaignGold(level, false))} or`, lootLabel(st, LOOT_REPLAY), best < 3 && `⭐ +${fmt(starGold(level))} or par nouvelle étoile`)
+      ? rewards(`✨ ${fmt(campaignXp(level) * REPLAY_XP)} XP`, `🪙 ${fmt(campaignGold(level, false))} or`, lootLabel(st, LOOT_REPLAY), best < 3 && `⭐ +${fmt(starGold(level))} or par nouvelle étoile`)
       : rewards(`✨ ${fmt(campaignXp(level))} XP`, `🪙 ${fmt(campaignGold(level, true))} or`, prev.boss ? '🔫 arme de boss garantie' : lootLabel(st, LOOT_FIRST_CLEAR), prev.boss && '🎟️ 1 tirage', `⭐ +${fmt(starGold(level))} or par étoile`),
-    h('div', { class: 'star-rules' }, h('span', null, stars(3, 3, 'stars-mini'), ' aucune perte'), h('span', null, stars(2, 3, 'stars-mini'), ' ≤ moitié tombée'), h('span', null, stars(1, 3, 'stars-mini'), ' victoire')),
-    h(
-      'div',
-      { class: 'meters' },
-      progressBar(st.lootMeter / LOOT_METER_MAX, `🔫 Jauge de butin : ${st.lootMeter} / ${LOOT_METER_MAX} (une arme quand elle est pleine)`, 'progress-loot'),
-      progressBar((total % STAR_CHEST_EVERY) / STAR_CHEST_EVERY, `⭐ Coffre d'étoiles (1 tirage) : ${total % STAR_CHEST_EVERY} / ${STAR_CHEST_EVERY}`),
+    fold(
+      'campaign-details',
+      'Jauges et règles',
+      [
+        h('div', { class: 'meters' }, progressBar(st.lootMeter / LOOT_METER_MAX, `🔫 Butin : ${st.lootMeter} / ${LOOT_METER_MAX} (une arme quand la jauge est pleine)`, 'progress-loot'), progressBar((total % STAR_CHEST_EVERY) / STAR_CHEST_EVERY, `⭐ Coffre d'étoiles (1 tirage) : ${total % STAR_CHEST_EVERY} / ${STAR_CHEST_EVERY}`)),
+        h('div', { class: 'star-rules' }, h('span', null, stars(3, 3, 'stars-mini'), ' aucune perte'), h('span', null, stars(2, 3, 'stars-mini'), ' ≤ moitié tombée'), h('span', null, stars(1, 3, 'stars-mini'), ' victoire')),
+        h('p', { class: 'muted small' }, `Victoire : les soldats tombés sont rapatriés, sans XP. Défaite : un tiers des tombés meurt, sauf sur les ${SAFE_LEVELS} premiers niveaux.`),
+        prev.elites.map((a) => h('p', { class: 'muted small' }, h('b', null, `Élite ${a.name}`), ` : ${a.desc}`)),
+      ],
     ),
-    h('p', { class: 'muted small' }, 'Victoire : les soldats tombés sont rapatriés (sans XP). Défaite : ils meurent définitivement.'),
   );
 }
 
@@ -541,10 +542,8 @@ function slots(st: GameState, squad: Soldier[], fixed: boolean): HTMLElement {
   );
 }
 
-function tacticPicker(st: GameState): HTMLElement {
-  if (!isUnlocked(st, 'tactics')) {
-    return h('div', { class: 'prep-block' }, h('h4', null, 'Tactique'), h('p', { class: 'muted small' }, `🔒 Les tactiques se débloquent au niveau ${unlockLevel('tactics')} de la campagne.`));
-  }
+function tacticPicker(st: GameState): HTMLElement | false {
+  if (!isUnlocked(st, 'tactics')) return false;
   const cur = activeTactic(st);
   return h(
     'div',
@@ -559,27 +558,18 @@ function tacticPicker(st: GameState): HTMLElement {
   );
 }
 
-function positionPanel(st: GameState, squad: Soldier[]): HTMLElement {
-  if (!isUnlocked(st, 'positions')) {
-    return h('div', { class: 'prep-block' }, h('h4', null, 'Positions'), h('p', { class: 'muted small' }, `🔒 Les positions se débloquent au niveau ${unlockLevel('positions')} de la campagne.`));
-  }
-  return h(
-    'div',
-    { class: 'prep-block' },
-    h('h4', null, 'Positions'),
-    squad.length === 0
-      ? h('p', { class: 'muted small' }, 'Engagez des soldats pour choisir où ils se placent.')
-      : h('div', { class: 'position-rows' }, squad.map((s) => h('div', { class: 'position-row' }, h('b', { class: 'position-name' }, s.name.split(' ')[0]), positionPicker(s)))),
-  );
+function positionPanel(st: GameState, squad: Soldier[]): HTMLElement | false {
+  if (!isUnlocked(st, 'positions') || squad.length === 0) return false;
+  return fold('positions', 'Positions', h('div', { class: 'position-rows' }, squad.map((s) => h('div', { class: 'position-row' }, h('b', { class: 'position-name' }, s.name.split(' ')[0]), positionPicker(s)))));
 }
 
-function synergyPanel(st: GameState, squad: Soldier[]): HTMLElement {
+function synergyPanel(st: GameState, squad: Soldier[]): HTMLElement | false {
+  if (squad.length === 0) return false;
   const status = synergyStatus(squad.map((s) => weaponForSoldier(s, st.weapons)));
   const active = status.filter((s) => s.active);
-  return h(
-    'div',
-    { class: 'prep-block' },
-    h('h4', null, 'Synergies ', h('span', { class: 'muted small' }, `${active.length} active${active.length > 1 ? 's' : ''}`)),
+  return fold(
+    'synergies',
+    active.length > 0 ? `Synergies : ${active.map((s) => `${s.def.icon} ${s.def.name}`).join(', ')}` : 'Synergies : aucune active',
     h(
       'div',
       { class: 'synergies' },
@@ -607,22 +597,17 @@ export function renderCombat(): HTMLElement {
   const tabs = h(
     'div',
     { class: 'mode-tabs' },
-    MODES.map((m) => {
-      const lock = MODE_UNLOCK[m.id];
-      const isLocked = !!lock && !isUnlocked(st, lock);
+    MODES.filter((m) => { const lock = MODE_UNLOCK[m.id]; return !lock || isUnlocked(st, lock) || mode === m.id; }).map((m) => {
       const status =
-        isLocked ? `Niv. ${unlockLevel(lock!)}`
-        : m.id === 'campaign' ? `Niveau ${nextLevel}`
-        : m.id === 'daily' ? (dailyDone(st) ? 'Fait' : 'Disponible')
-        : m.id === 'survival' ? (st.survival ? `Vague ${st.survival.wave + 1}` : `Record ${st.bestWave}`)
-        : m.id === 'fodder' ? `Rang ${st.colossus.rank}`
-        : m.id === 'training' ? 'Sans risque'
-        : 'Sans conséquence';
+        m.id === 'campaign' ? `Niveau ${nextLevel}`
+        : m.id === 'daily' ? (dailyDone(st) ? 'Fait' : undefined)
+        : m.id === 'survival' && st.survival ? `Vague ${st.survival.wave + 1}`
+        : undefined;
       return h(
         'button',
-        { class: `mode-tab${mode === m.id ? ' active' : ''}${isLocked ? ' locked' : ''}`, onclick: () => { setMode(m.id); refresh(); } },
-        h('span', { class: 'mode-icon' }, isLocked ? '🔒' : m.icon),
-        h('span', { class: 'mode-text' }, h('b', null, m.label), h('small', null, status)),
+        { class: `mode-tab${mode === m.id ? ' active' : ''}`, onclick: () => { setMode(m.id); refresh(); } },
+        h('span', { class: 'mode-icon' }, m.icon),
+        h('span', { class: 'mode-text' }, h('b', null, m.label), status && h('small', null, status)),
         m.id === 'daily' && dailyReady && h('span', { class: 'badge' }, '!'),
       );
     }),
@@ -677,7 +662,7 @@ export function renderCombat(): HTMLElement {
           '.',
         ),
       fee > 0 && h('p', { class: `note small${broke ? ' note-bad' : ''}` }, `Entraînement payant (${picked.filter(paidTraining).map((s) => s.name).join(', ')}) : ${fmt(fee)} or${broke ? ` — il manque ${fmt(fee - st.gold)} or` : ''}.`),
-      h('div', { class: 'prep-grid' }, tacticPicker(st), positionPanel(st, picked), synergyPanel(st, picked)),
+      h('div', { class: 'prep-stack' }, tacticPicker(st), positionPanel(st, picked), synergyPanel(st, picked)),
     );
 
   const picker =
@@ -686,7 +671,6 @@ export function renderCombat(): HTMLElement {
     h(
       'div',
       { class: 'picker' },
-      h('h3', { class: 'section-title' }, 'Choisir les soldats'),
       st.soldiers.length === 0
         ? h('div', { class: 'panel empty' }, h('p', null, "Vous n'avez aucun soldat."), h('button', { class: 'btn btn-primary', onclick: () => goTo('recruit') }, 'Recruter des soldats'))
         : [
@@ -730,6 +714,6 @@ export function renderCombat(): HTMLElement {
     tabs,
     h('div', { class: 'combat-cols' }, info, prep),
     picker,
-    !lockId && h('div', { class: 'launch-bar' }, est ? estimateLine(est) : h('span', { class: 'muted small' }, mode === 'simulation' ? 'Simulation : aucune perte réelle.' : mode === 'fodder' ? 'Aucun soldat engagé ne reviendra, ni son arme.' : 'Sélectionnez votre escouade pour voir vos chances.'), h('div', { class: 'launch-buttons' }, quickPick, launchBtn)),
+    !lockId && h('div', { class: 'launch-bar' }, est ? estimateLine(est) : h('span', { class: 'muted small' }, mode === 'simulation' ? 'Simulation : aucune perte réelle.' : mode === 'fodder' ? 'Aucun soldat engagé ne reviendra, ni son arme.' : 'Sélectionnez votre escouade pour voir vos chances.'), h('div', { class: 'launch-buttons' }, quickPick || launchBtn)),
   );
 }

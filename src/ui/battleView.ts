@@ -5,7 +5,7 @@ import { getState } from '../game/state';
 import { BATTLE_SPEEDS, type BattleSpeed } from '../game/types';
 import { h, html } from './dom';
 import { spriteSvg } from './avatar';
-import { fmt, stars, weaponIcon } from './components';
+import { fmt, fold, stars, weaponIcon } from './components';
 
 interface UnitView {
   el: HTMLElement;
@@ -296,7 +296,7 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
   const title = report.colossus ? (report.colossus.killed ? 'Colosse abattu !' : 'Sacrifice accompli') : report.won ? 'Victoire !' : report.timeout ? 'Temps écoulé — défaite' : 'Défaite';
   const survivors = new Set(report.soldiers.filter((s) => !s.died).map((s) => s.id));
   const picks = getState().soldiers.filter((s) => survivors.has(s.id) && s.picksLeft > 0).length;
-  const rows = report.soldiers.map((s) =>
+  const row = (s: BattleReport['soldiers'][number]) =>
     h(
       'li',
       { class: s.died ? 'died' : s.wounded ? 'wounded' : '' },
@@ -308,25 +308,14 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
           : ` +${fmt(s.xpGained)} XP`,
       s.levelsGained > 0 && h('span', { class: 'levelup' }, ` Niveau ${s.newLevel} !`),
       s.kills > 0 && h('span', { class: 'muted' }, ` (${s.kills} élimination${s.kills > 1 ? 's' : ''})`),
-    ),
-  );
+    );
+  // Une mort ou un nouveau niveau se voient tout de suite ; le détail de chaque soldat reste à la demande
+  const notable = report.soldiers.filter((s) => s.died || s.levelsGained > 0);
   const details = h(
     'table',
     { class: 'stats-table' },
     h('tr', null, h('th', null, 'Soldat'), h('th', null, 'Infligés'), h('th', null, 'Subis'), h('th', null, 'Soins reçus'), h('th', null, 'Soins donnés')),
     report.soldiers.map((s) => h('tr', { class: s.died ? 'died' : '' }, h('td', null, s.name), h('td', null, fmt(Math.round(s.dealt))), h('td', null, fmt(Math.round(s.taken))), h('td', null, fmt(Math.round(s.healed))), h('td', null, fmt(Math.round(s.healGiven))))),
-  );
-  const detailsBox = h('div', { hidden: true }, details);
-  const toggle = h(
-    'button',
-    {
-      class: 'btn btn-small',
-      onclick: () => {
-        detailsBox.hidden = !detailsBox.hidden;
-        toggle.textContent = detailsBox.hidden ? 'Stats avancées' : 'Masquer les stats avancées';
-      },
-    },
-    'Stats avancées',
   );
   return h(
     'div',
@@ -345,9 +334,6 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
           ? `Expédition terminée après ${report.survival.wave} vague${report.survival.wave > 1 ? 's' : ''} : la moitié du pot est versée.`
           : `Vague ${report.survival.wave} remportée ! Pot : ${fmt(report.survival.pot)} or. Continuez, ou encaissez depuis l'onglet Combat.`,
       ),
-    h('ul', { class: 'result-list' }, rows),
-    toggle,
-    detailsBox,
     h(
       'div',
       { class: 'result-rewards' },
@@ -367,7 +353,9 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
         h('b', null, report.unlocked.length > 1 ? 'Nouveautés débloquées !' : 'Nouveauté débloquée !'),
         h('ul', null, report.unlocked.map((u) => h('li', null, h('b', null, u.label), ` : ${u.desc}`))),
       ),
+    notable.length > 0 && h('ul', { class: 'result-list' }, notable.map(row)),
     picks > 0 && h('p', { class: 'note note-accent result-hint' }, `⬆ ${picks} soldat${picks > 1 ? 's ont' : ' a'} de nouvelles améliorations à choisir (onglet Escouade).`),
     resultActions(close, replay),
+    fold('result-details', 'Détail du combat', [h('ul', { class: 'result-list' }, report.soldiers.map(row)), h('div', { class: 'table-scroll' }, details)]),
   );
 }
