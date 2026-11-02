@@ -92,7 +92,7 @@ describe('seuils de progression', () => {
     const r = launchBattle(st, { mode: 'campaign', squad: ids(st), level: 5 }, 3);
     if (!r.ok) throw new Error(r.error);
     expect(r.report.won).toBe(true);
-    expect(r.report.unlocked.map((u) => u.id)).toEqual(['simulation']);
+    expect(r.report.unlocked.map((u) => u.id)).toEqual(['simulation', 'positions']);
     expect(r.report.freePulls).toBe(BOSS_FREE_PULLS);
     expect(st.freePulls).toBe(free + BOSS_FREE_PULLS);
     expect(unlocksBetween(0, 100)).toHaveLength(UNLOCKS.length);

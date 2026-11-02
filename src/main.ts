@@ -51,7 +51,7 @@ root.append(
   h(
     'div',
     { class: 'shell' },
-    h('aside', { class: 'sidebar' }, h('div', { class: 'brand' }, h('span', { class: 'brand-mark' }, 'KT'), h('span', { class: 'brand-name' }, 'Krazy Troopers')), navEl),
+    h('aside', { class: 'sidebar' }, h('div', { class: 'brand' }, h('img', { class: 'brand-mark', src: './favicon.svg', alt: '' }), h('span', { class: 'brand-name' }, 'Krazy Troopers')), navEl),
     h('div', { class: 'main' }, h('header', { class: 'topbar' }, titleEl, resourcesEl), mainEl),
   ),
 );

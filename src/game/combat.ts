@@ -1,7 +1,7 @@
 import { DT, simulate, type BattleResult, type BattleUnit } from './battle';
 import { BOSS_FREE_PULLS, COLOSSUS_PULLS, DAILY_PULL_EVERY, LOOT_FIRST_CLEAR, PITY_LIMIT, RARITY_ORDER, LOOT_METER_MAX, LOOT_REPLAY, MAX_LEVEL, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, type UnlockDef } from './data';
 import { grantLevelPicks } from './upgrades';
-import { activeTactic, applySquadBonuses, synergyStatus } from './squad';
+import { activePosition, activeTactic, applySquadBonuses, synergyStatus } from './squad';
 import {
   buildCampaignEnemies,
   buildColossus,
@@ -153,7 +153,7 @@ function allyUnits(st: GameState, squad: Soldier[], hp?: Record<string, number>)
   const stats = squadStats(st, squad);
   return squad.map((s) => {
     const weapon = weaponForSoldier(s, st.weapons);
-    return { id: s.id, team: 'ally', name: s.name, look: soldierLook(s, weapon), scale: 1, soldierId: s.id, stats: stats.get(s.id)!, hp: hp?.[s.id] };
+    return { id: s.id, team: 'ally', name: s.name, look: soldierLook(s, weapon), scale: 1, soldierId: s.id, stats: stats.get(s.id)!, hp: hp?.[s.id], position: activePosition(st, s), tank: weapon.shape === 'shield' };
   });
 }
 

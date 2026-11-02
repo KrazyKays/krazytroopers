@@ -1,5 +1,5 @@
 import { LEGEND_UPGRADES, LEGION_PICKS, MAX_LEVEL, PICK_LEVELS, RARITIES, RARITY_ORDER, TRAINING_PER_SOLDIER, UPGRADE_KINDS, UPGRADES_BY_ID, WEAPONS_BY_ID } from '../game/data';
-import { squadMax, unlockLevel } from '../game/progress';
+import { isUnlocked, squadMax, unlockLevel } from '../game/progress';
 import { barracksCap, equipWeapon, NAME_MAX_LENGTH, releaseSoldier, releaseSoldiers, renameSoldier, sortSquad, toggleFavorite, trainingCost } from '../game/roster';
 import { getState, mutate, refresh } from '../game/state';
 import { computeStats, dps, powerScore, weaponForSoldier, xpForNext } from '../game/stats';
@@ -23,7 +23,7 @@ import {
 import type { CombatStats, GameState, Rarity, Soldier, WeaponDef } from '../game/types';
 import { h } from './dom';
 import { goTo } from './nav';
-import { confirmDialog, familyTag, fmt, getSquadSort, openModal, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
+import { confirmDialog, familyTag, fmt, getSquadSort, openModal, positionPicker, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
 
 
 const RARITY_PLURAL: Record<Rarity, string> = { common: 'communs', rare: 'rares', epic: 'épiques', legendary: 'légendaires' };
@@ -357,6 +357,7 @@ export function openSoldier(id: string): void {
       statsBlock,
       upgrades,
       legion,
+      isUnlocked(st, 'positions') && h('div', { class: 'upgrade-block' }, h('h3', null, 'Position au combat'), positionPicker(s)),
       h('div', { class: 'upgrade-block' }, h('h3', null, `Arme : ${weapon.name} `, familyTag(weapon)), h('p', { class: 'muted small' }, "La famille de l'arme compte pour les synergies d'escouade (onglet Combat)."), weaponList),
       h(
         'div',

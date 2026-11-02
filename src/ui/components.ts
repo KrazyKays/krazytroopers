@@ -3,7 +3,7 @@ import { getState, getVersion, mutate, refresh, replaceState } from '../game/sta
 import { soldierLook } from '../game/look';
 import { computeStats, dps, weaponForSoldier, xpForNext } from '../game/stats';
 import { SQUAD_SORTS, sortSquad, type SquadSort } from '../game/roster';
-import { FAMILY_LABELS, weaponFamily } from '../game/squad';
+import { FAMILY_LABELS, POSITIONS, POSITIONS_BY_ID, weaponFamily } from '../game/squad';
 import type { GameState, Rarity, Soldier, TitleId, WeaponDef } from '../game/types';
 import { spriteSvg, weaponSvg } from './avatar';
 import { h, html, type Child } from './dom';
@@ -26,6 +26,30 @@ export function stars(n: number, max = 3, cls = ''): HTMLElement {
 }
 
 /** Famille d'une arme (pour les synergies), en petite étiquette. */
+/** Choix de la position d'un soldat, avec l'effet de celle retenue. */
+export function positionPicker(s: Soldier): HTMLElement {
+  return h(
+    'div',
+    { class: 'position-picker' },
+    h(
+      'div',
+      { class: 'positions' },
+      POSITIONS.map((p) =>
+        h(
+          'button',
+          {
+            class: `position${p.id === s.position ? ' active' : ''}`,
+            title: `${p.name} : ${p.desc}`,
+            onclick: () => mutate((g) => { const t = g.soldiers.find((x) => x.id === s.id); if (t) t.position = p.id; }),
+          },
+          p.icon,
+        ),
+      ),
+    ),
+    h('small', { class: 'muted' }, h('b', null, POSITIONS_BY_ID[s.position].name), ` : ${POSITIONS_BY_ID[s.position].desc}`),
+  );
+}
+
 export function familyTag(w: WeaponDef): HTMLElement | false {
   const f = weaponFamily(w);
   return !!f && h('span', { class: `tag tag-family fam-${f}`, title: 'Famille d’arme : compte pour les synergies d’escouade' }, FAMILY_LABELS[f]);

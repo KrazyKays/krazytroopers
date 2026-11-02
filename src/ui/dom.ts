@@ -11,6 +11,8 @@ type Props = {
   value?: string;
   placeholder?: string;
   accept?: string;
+  src?: string;
+  alt?: string;
   rows?: number;
   data?: Record<string, string>;
   onclick?: (e: MouseEvent) => void;

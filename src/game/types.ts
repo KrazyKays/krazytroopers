@@ -2,6 +2,7 @@ export type Rarity = 'common' | 'rare' | 'epic' | 'legendary';
 export type Team = 'ally' | 'enemy';
 export type TitleId = 'legende' | 'legion';
 export type TacticId = 'balanced' | 'assault' | 'bulwark' | 'hunters';
+export type PositionId = 'free' | 'front' | 'cover' | 'rear';
 
 export interface Appearance {
   skin: number;
@@ -30,6 +31,8 @@ export interface Soldier {
   favorite: boolean;
   /** Nombre de Légions d'honneur reçues : chacune ouvre des emplacements d'amélioration supplémentaires. */
   legions: number;
+  /** Place du soldat dans la formation au combat. */
+  position: PositionId;
 }
 
 export interface WeaponItem {

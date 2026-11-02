@@ -7,7 +7,7 @@ import { claimGoal, claimableGoals } from './goals';
 import { unlockLevel } from './progress';
 import { mulberry32 } from './rng';
 import { createSoldier } from './roster';
-import { synergyStatus } from './squad';
+import { activePosition, synergyStatus } from './squad';
 import { createInitialState, parseSave } from './state';
 import { computeStats } from './stats';
 import type { GameState } from './types';
@@ -71,6 +71,73 @@ describe('tactiques', () => {
     const result = simulate([ally, near, far], 1);
     const shot = result.frames.flatMap((f) => f.e).find((e) => e.t === 'hit' || e.t === 'miss');
     expect(shot && (shot.t === 'hit' || shot.t === 'miss') && shot.b).toBe(2);
+  });
+});
+
+describe('positions', () => {
+  const unit = (id: string, position: BattleUnit['position'], speed: number, tank = false): BattleUnit => {
+    const st = squadState(['pistol']);
+    return { id, team: 'ally', name: id, look: { skin: '', hair: '', uniform: '', helmet: '', weaponId: 'pistol' }, scale: 1, position, tank, stats: { ...computeStats(st.soldiers[0], WEAPONS_BY_ID.pistol), speed, damage: 0, maxHp: 100000 } };
+  };
+  const shield = (speed: number): BattleUnit => {
+    const u = unit('shield', 'free', speed, true);
+    return { ...u, stats: { ...u.stats, range: 26, ranged: false } };
+  };
+  const foe = (): BattleUnit => {
+    const [e] = buildCampaignEnemies(1);
+    return { ...e, stats: { ...e.stats, damage: 0, speed: 0, range: 10, maxHp: 100000 } };
+  };
+  // abscisse de l'unité d'indice `i` à chaque image
+  const track = (units: BattleUnit[], i: number) => simulate(units, 1).frames.map((f) => f.p[i * 3]);
+
+  it('à couvert : un soldat rapide ne dépasse pas le bouclier avant le contact', () => {
+    const covered = track([shield(40), unit('fast', 'cover', 200), foe()], 1);
+    const tank = track([shield(40), unit('fast', 'cover', 200), foe()], 0);
+    covered.forEach((x, i) => expect(x).toBeLessThan(tank[i]));
+    // sans la consigne, il part loin devant
+    const free = track([shield(40), unit('fast', 'free', 200), foe()], 1);
+    expect(free[20]).toBeGreaterThan(tank[20]);
+  });
+
+  it('à couvert : un soldat de mêlée rejoint le combat une fois le bouclier engagé', () => {
+    const melee = unit('melee', 'cover', 200);
+    const xs = track([shield(100), { ...melee, stats: { ...melee.stats, range: 26, ranged: false } }, foe()], 1);
+    expect(xs[xs.length - 1]).toBeGreaterThan(690);
+  });
+
+  it('à couvert : avance librement sans première ligne, et un bouclier à couvert n’en forme pas une', () => {
+    const alone = track([unit('solo', 'cover', 100), foe()], 0);
+    expect(alone[alone.length - 1]).toBeGreaterThan(500);
+    const xs = track([{ ...shield(100), position: 'cover' }, foe()], 0);
+    expect(xs[xs.length - 1]).toBeGreaterThan(690);
+  });
+
+  it('en pointe : part devant et s’approche au contact, même à portée de tir', () => {
+    const xs = track([unit('front', 'front', 100), foe()], 0);
+    const free = track([unit('free', 'free', 100), foe()], 0);
+    expect(xs[0]).toBeGreaterThan(free[0]);
+    expect(xs[xs.length - 1]).toBeGreaterThan(free[free.length - 1] + 80);
+  });
+
+  it('à distance : s’arrête plus loin et recule devant un ennemi qui approche', () => {
+    const far = track([unit('rear', 'rear', 400), foe()], 0);
+    const free = track([unit('free', 'free', 400), foe()], 0);
+    expect(far[far.length - 1]).toBeLessThan(free[free.length - 1]);
+    const chaser = foe();
+    chaser.stats.speed = 30;
+    const xs = track([unit('rear', 'rear', 100), chaser], 0);
+    expect(xs[xs.length - 1]).toBeLessThan(Math.max(...xs));
+  });
+
+  it('ne s’appliquent qu’une fois débloquées, et les anciennes sauvegardes restent libres', () => {
+    const st = squadState(['pistol']);
+    st.soldiers[0].position = 'rear';
+    expect(activePosition(st, st.soldiers[0])).toBe('free');
+    st.campaignLevel = unlockLevel('positions');
+    expect(activePosition(st, st.soldiers[0])).toBe('rear');
+    const raw = JSON.parse(JSON.stringify(st));
+    delete raw.soldiers[0].position;
+    expect(parseSave(JSON.stringify(raw))!.soldiers[0].position).toBe('free');
   });
 });
 

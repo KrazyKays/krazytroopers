@@ -1,5 +1,5 @@
 import { isUnlocked } from './progress';
-import type { CombatStats, GameState, TacticId, WeaponDef, WeaponShape } from './types';
+import type { CombatStats, GameState, PositionId, Soldier, TacticId, WeaponDef, WeaponShape } from './types';
 
 // ---------- Tactiques ----------
 
@@ -27,6 +27,29 @@ export const TACTICS_BY_ID = Object.fromEntries(TACTICS.map((t) => [t.id, t])) a
 /** Tactique réellement appliquée : « Équilibrée » tant que les tactiques ne sont pas débloquées. */
 export function activeTactic(st: GameState): TacticDef {
   return isUnlocked(st, 'tactics') ? (TACTICS_BY_ID[st.tactic] ?? TACTICS_BY_ID.balanced) : TACTICS_BY_ID.balanced;
+}
+
+// ---------- Positions ----------
+
+export interface PositionDef {
+  id: PositionId;
+  name: string;
+  icon: string;
+  desc: string;
+}
+
+export const POSITIONS: PositionDef[] = [
+  { id: 'free', name: 'Libre', icon: '🏃', desc: 'Avance à son rythme jusqu’à avoir l’ennemi à portée.' },
+  { id: 'front', name: 'En pointe', icon: '🗡️', desc: 'Part devant et fonce au contact en attaquant : attire les coups.' },
+  { id: 'cover', name: 'À couvert', icon: '🛡️', desc: 'Ne dépasse pas la première ligne tant qu’elle n’a pas engagé le combat.' },
+  { id: 'rear', name: 'À distance', icon: '🔭', desc: 'S’arrête au bout de sa portée et recule si l’ennemi s’approche.' },
+];
+
+export const POSITIONS_BY_ID = Object.fromEntries(POSITIONS.map((p) => [p.id, p])) as Record<PositionId, PositionDef>;
+
+/** Position réellement appliquée : « Libre » tant que les positions ne sont pas débloquées. */
+export function activePosition(st: GameState, s: Soldier): PositionId {
+  return isUnlocked(st, 'positions') ? s.position : 'free';
 }
 
 // ---------- Synergies ----------

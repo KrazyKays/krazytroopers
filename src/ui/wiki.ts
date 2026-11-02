@@ -36,7 +36,7 @@ import {
   WEAPONS_BY_ID,
 } from '../game/data';
 import { unlockLevel } from '../game/progress';
-import { FAMILY_LABELS, SYNERGIES, TACTICS, weaponFamily } from '../game/squad';
+import { FAMILY_LABELS, POSITIONS, SYNERGIES, TACTICS, weaponFamily } from '../game/squad';
 import { getState } from '../game/state';
 import { BASE_HP, BASE_SPEED } from '../game/stats';
 import type { GameState, UpgradeDef } from '../game/types';
@@ -177,7 +177,7 @@ function sections(st: GameState): Section[] {
       articles: [
         {
           title: 'Déroulement d’un combat',
-          body: [p('Les combats se jouent seuls : chaque soldat avance vers l’ennemi le plus proche et frappe dès qu’il est à portée. Vos choix se font avant : escouade, armes, améliorations et tactique. La Chasse aux blessés change la cible : l’ennemi à portée qui a le moins de PV en proportion.')],
+          body: [p('Les combats se jouent seuls : chaque soldat avance vers l’ennemi le plus proche et frappe dès qu’il est à portée. Vos choix se font avant : escouade, armes, améliorations, tactique et positions. La Chasse aux blessés change la cible : l’ennemi à portée qui a le moins de PV en proportion.')],
         },
         {
           title: 'Calcul des dégâts',
@@ -295,11 +295,19 @@ function sections(st: GameState): Section[] {
     {
       id: 'squad',
       icon: '🎖️',
-      label: 'Tactiques et synergies',
+      label: 'Tactiques, positions, synergies',
       articles: [
         {
           title: 'Tactiques',
           body: [p('Une seule tactique s’applique à toute l’escouade, dans tous les modes de combat.'), list(...TACTICS.map((t) => [b(`${t.icon} ${t.name} : `), t.desc]))],
+        },
+        {
+          title: 'Positions',
+          body: [
+            p(`Chaque soldat garde sa propre position, débloquée au niveau ${unlockLevel('positions')} de la campagne. Elle se règle à la préparation du combat ou sur sa fiche, et ne donne aucun bonus de statistiques.`),
+            list(...POSITIONS.map((t) => [b(`${t.icon} ${t.name} : `), t.desc])),
+            p('La première ligne est formée par les porteurs de bouclier en position Libre et les soldats En pointe, ou à défaut par les soldats Libres, soigneurs exclus. Sans première ligne, un soldat À couvert avance librement. Une fois le combat engagé, il peut avancer pour avoir sa cible à portée : c’est indispensable pour une arme de mêlée.'),
+          ],
         },
         {
           title: 'Synergies',

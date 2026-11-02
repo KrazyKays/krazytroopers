@@ -91,6 +91,7 @@ export function parseSave(raw: string): GameState | null {
               titles,
               trainingsLeft: s.trainingsLeft ?? TRAINING_PER_SOLDIER,
               legions: s.legions ?? (titles.includes('legion') ? 1 : 0),
+              position: s.position ?? 'free',
             };
             // les paliers d'amélioration ont changé : on recale les choix en attente, sans rien retirer
             grantLevelPicks(soldier);

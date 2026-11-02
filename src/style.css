@@ -159,15 +159,11 @@ input[type='checkbox'] {
 }
 
 .brand-mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 38px;
   height: 38px;
-  font-weight: 900;
-  letter-spacing: -0.04em;
-  color: #fff;
-  background: linear-gradient(135deg, var(--primary), #6aa64a);
   border-radius: 11px;
+  image-rendering: pixelated;
   box-shadow: 0 3px 10px color-mix(in srgb, var(--primary) 35%, transparent);
 }
 
@@ -1663,6 +1659,56 @@ input[type='checkbox'] {
 
 .tactic-icon {
   font-size: 1.2rem;
+}
+
+.position-rows {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.position-row {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: start;
+}
+
+.position-name {
+  overflow: hidden;
+  padding-top: 0.35rem;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.position-picker {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.positions {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.position {
+  width: 2.75rem;
+  min-height: 2.25rem;
+  font-size: 1.05rem;
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.position:hover {
+  border-color: var(--line-strong);
+}
+
+.position.active {
+  background: var(--primary-soft);
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent);
 }
 
 .synergies {

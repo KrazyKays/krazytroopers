@@ -49,7 +49,7 @@ import { weaponForSoldier } from '../game/stats';
 import type { GameState, Soldier } from '../game/types';
 import { h } from './dom';
 import { openBattle } from './battleView';
-import { confirmDialog, fmt, getSquadSort, progressBar, soldierSprite, squadToolbar, squadView, stars, toast } from './components';
+import { confirmDialog, fmt, getSquadSort, positionPicker, progressBar, soldierSprite, squadToolbar, squadView, stars, toast } from './components';
 import { goTo } from './nav';
 import { openSoldier } from './roster';
 
@@ -101,7 +101,7 @@ function battleRequest(st: GameState, level: number): BattleRequest {
 
 function currentBattleEstimate(st: GameState, req: BattleRequest): SimulationEstimate | null {
   const soldiers = req.squad.map((id) => st.soldiers.find((s) => s.id === id)).filter((s): s is Soldier => !!s);
-  const key = JSON.stringify([req, dailyKey(), st.campaignLevel, st.survival, st.tactic, soldiers.map((s) => [s.level, s.upgrades, st.weapons.find((w) => w.uid === s.weaponUid)?.defId ?? null])]);
+  const key = JSON.stringify([req, dailyKey(), st.campaignLevel, st.survival, st.tactic, soldiers.map((s) => [s.level, s.upgrades, s.position, st.weapons.find((w) => w.uid === s.weaponUid)?.defId ?? null])]);
   if (battleEstimate?.key !== key) {
     const res = estimateBattle(st, req);
     if (!res.ok) return null;
@@ -159,7 +159,7 @@ const sim: SimulationConfig = { ...DEFAULT_SIMULATION };
 /** Dernière estimation, valable tant que l'escouade et la configuration n'ont pas changé. */
 let estimate: { key: string; value: SimulationEstimate } | null = null;
 
-const simKey = (): string => JSON.stringify([sim, [...selected].sort(), getState().tactic]);
+const simKey = (): string => JSON.stringify([sim, [...selected].sort(), getState().tactic, getState().soldiers.filter((s) => selected.has(s.id)).map((s) => s.position)]);
 const simMaxLevel = (st: GameState): number => Math.max(10, st.campaignLevel + 10);
 
 function eligible(s: Soldier): boolean {
@@ -559,6 +559,20 @@ function tacticPicker(st: GameState): HTMLElement {
   );
 }
 
+function positionPanel(st: GameState, squad: Soldier[]): HTMLElement {
+  if (!isUnlocked(st, 'positions')) {
+    return h('div', { class: 'prep-block' }, h('h4', null, 'Positions'), h('p', { class: 'muted small' }, `🔒 Les positions se débloquent au niveau ${unlockLevel('positions')} de la campagne.`));
+  }
+  return h(
+    'div',
+    { class: 'prep-block' },
+    h('h4', null, 'Positions'),
+    squad.length === 0
+      ? h('p', { class: 'muted small' }, 'Engagez des soldats pour choisir où ils se placent.')
+      : h('div', { class: 'position-rows' }, squad.map((s) => h('div', { class: 'position-row' }, h('b', { class: 'position-name' }, s.name.split(' ')[0]), positionPicker(s)))),
+  );
+}
+
 function synergyPanel(st: GameState, squad: Soldier[]): HTMLElement {
   const status = synergyStatus(squad.map((s) => weaponForSoldier(s, st.weapons)));
   const active = status.filter((s) => s.active);
@@ -663,7 +677,7 @@ export function renderCombat(): HTMLElement {
           '.',
         ),
       fee > 0 && h('p', { class: `note small${broke ? ' note-bad' : ''}` }, `Entraînement payant (${picked.filter(paidTraining).map((s) => s.name).join(', ')}) : ${fmt(fee)} or${broke ? ` — il manque ${fmt(fee - st.gold)} or` : ''}.`),
-      h('div', { class: 'prep-grid' }, tacticPicker(st), synergyPanel(st, picked)),
+      h('div', { class: 'prep-grid' }, tacticPicker(st), positionPanel(st, picked), synergyPanel(st, picked)),
     );
 
   const picker =

@@ -61,6 +61,7 @@ export function createSoldier(st: GameState, rarity: Rarity, rng: Rng): Soldier 
     kills: 0,
     favorite: false,
     legions: 0,
+    position: 'free',
   };
   grantLevelPicks(s, rng);
   return s;

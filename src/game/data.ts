@@ -41,7 +41,7 @@ export const LOOT_REPLAY = 1;
 /** La jauge démarre à moitié pleine : le premier niveau de campagne offre déjà une arme. */
 export const START_LOOT = 2;
 
-export type UnlockId = 'tactics' | 'squad4' | 'armory' | 'simulation' | 'daily' | 'squad5' | 'autopick' | 'forge' | 'survival' | 'bulk' | 'squad6' | 'fodder';
+export type UnlockId = 'tactics' | 'squad4' | 'armory' | 'simulation' | 'positions' | 'daily' | 'squad5' | 'autopick' | 'forge' | 'survival' | 'bulk' | 'squad6' | 'fodder';
 
 export interface UnlockDef {
   id: UnlockId;
@@ -57,6 +57,7 @@ export const UNLOCKS: UnlockDef[] = [
   { id: 'squad4', level: 3, label: "4e place d'escouade", desc: "Engagez jusqu'à 4 soldats par combat." },
   { id: 'armory', level: 4, label: 'Armurerie', desc: "Achetez des armes au hasard dans l'onglet Recrutement." },
   { id: 'simulation', level: 5, label: 'Simulation', desc: 'Testez votre escouade sans risque face aux adversaires de votre choix.' },
+  { id: 'positions', level: 5, label: 'Positions', desc: 'Placez chaque soldat : en pointe, à couvert derrière les boucliers, à distance ou libre.' },
   { id: 'fodder', level: 6, label: 'Chair à canon', desc: 'Sacrifiez les soldats dont vous ne voulez plus contre le Colosse : la garantie de recrutement avance, et sa mort rapporte gros.' },
   { id: 'daily', level: 7, label: 'Défi du jour', desc: 'Un combat unique chaque jour, avec une règle spéciale et de grosses récompenses.' },
   { id: 'squad5', level: 8, label: "5e place d'escouade", desc: "Engagez jusqu'à 5 soldats par combat." },

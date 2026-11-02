@@ -1,11 +1,21 @@
 import { mulberry32, shuffle } from './rng';
-import type { CombatStats, SpriteLook, Team } from './types';
+import type { CombatStats, PositionId, SpriteLook, Team } from './types';
 
 export const ARENA_W = 800;
 export const ARENA_H = 400;
 export const DT = 0.1;
 export const MAX_TICKS = 1200;
 const SEPARATION = 12;
+/** Décalage de la formation de départ selon la position. */
+const START_OFFSET: Record<PositionId, number> = { free: 0, front: 24, cover: -14, rear: -40 };
+/** Distance gardée derrière la première ligne par un soldat à couvert. */
+const COVER_GAP = 14;
+/** Distance de la cible à laquelle un soldat en pointe s'arrête. */
+const FRONT_CONTACT = 30;
+/** À distance : s'arrête à cette part de sa portée, et recule sous REAR_RETREAT, moins vite qu'il n'avance. */
+const REAR_HOLD = 0.98;
+const REAR_RETREAT = 0.85;
+const REAR_RETREAT_SPEED = 0.5;
 
 export interface BattleUnit {
   id: string;
@@ -23,6 +33,10 @@ export interface BattleUnit {
   elite?: string;
   /** PV au début du combat (survie : les blessures des vagues précédentes) ; PV max par défaut. */
   hp?: number;
+  /** Place dans la formation (« Libre » par défaut). */
+  position?: PositionId;
+  /** Porte un bouclier : tient la première ligne, sauf position contraire. */
+  tank?: boolean;
 }
 
 export type BattleEvent =
@@ -91,7 +105,7 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
     const idx = units.map((u, i) => (u.team === team ? i : -1)).filter((i) => i >= 0);
     const pos = formation(idx.length, team);
     idx.forEach((i, k) => {
-      x[i] = pos[k].x;
+      x[i] = pos[k].x + START_OFFSET[units[i].position ?? 'free'];
       y[i] = pos[k].y;
     });
   }
@@ -157,6 +171,33 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
     return best;
   };
 
+  const hasCover = units.some((u) => u.position === 'cover');
+  // Abscisse à ne pas dépasser pour un soldat à couvert : derrière le plus avancé des boucliers et soldats en pointe
+  // (à défaut, des soldats libres), jusqu'à ce qu'il engage le combat. Un soigneur ne compte pas : il suit ses blessés.
+  const coverLimit = (): number => {
+    let lead = -1;
+    let leadRank = 0;
+    for (let j = 0; j < n; j++) {
+      const u = units[j];
+      if (u.team !== 'ally' || !alive(j) || u.stats.heal) continue;
+      const position = u.position ?? 'free';
+      const rank = position === 'front' || (position === 'free' && u.tank) ? 2 : position === 'free' ? 1 : 0;
+      if (rank > leadRank || (rank === leadRank && rank > 0 && x[j] > x[lead])) {
+        lead = j;
+        leadRank = rank;
+      }
+    }
+    if (lead < 0) return Infinity;
+    const t = nearestEnemy(lead);
+    if (t >= 0 && Math.hypot(x[t] - x[lead], y[t] - y[lead]) <= units[lead].stats.range) return Infinity;
+    return x[lead] - COVER_GAP;
+  };
+  const stopDistance = (i: number): number => {
+    const { range } = units[i].stats;
+    if (units[i].position === 'rear') return range * REAR_HOLD;
+    return units[i].position === 'front' ? Math.min(range * 0.9, FRONT_CONTACT) : range * 0.9;
+  };
+
   for (let tick = 1; tick <= MAX_TICKS; tick++) {
     ticks = tick;
     const events: BattleEvent[] = [];
@@ -192,11 +233,29 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
       return real;
     };
 
+    const limit = hasCover ? coverLimit() : Infinity;
+    const advance = (i: number, dx: number, dy: number, d: number): void => {
+      const step = Math.min(units[i].stats.speed * DT, d - stopDistance(i));
+      const nx = x[i] + (dx / d) * step;
+      // un soldat déjà passé devant attend sur place que la ligne le rejoigne
+      x[i] = units[i].position === 'cover' ? Math.min(nx, Math.max(x[i], limit)) : nx;
+      y[i] += (dy / d) * step;
+    };
+
     for (const i of order) {
       if (!alive(i)) continue;
       const S = units[i].stats;
       if (S.regen > 0) heal(i, S.regen * S.maxHp * DT);
       cd[i] -= DT;
+      if (units[i].position === 'rear' && S.ranged) {
+        const e = nearestEnemy(i);
+        const d = e >= 0 ? Math.hypot(x[e] - x[i], y[e] - y[i]) : Infinity;
+        if (d > 0.01 && d < S.range * REAR_RETREAT) {
+          const step = S.speed * DT * REAR_RETREAT_SPEED;
+          x[i] -= ((x[e] - x[i]) / d) * step;
+          y[i] -= ((y[e] - y[i]) / d) * step;
+        }
+      }
       const patient = S.heal ? mostInjuredAlly(i) : -1;
       if (patient >= 0) {
         const dx = x[patient] - x[i];
@@ -211,9 +270,7 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
           totalHealGiven[i] += hp[patient] - before;
           events.push({ t: 'heal', a: i, b: patient, amount: Math.round(hp[patient] - before) });
         } else {
-          const step = Math.min(S.speed * DT, d - S.range * 0.9);
-          x[i] += (dx / d) * step;
-          y[i] += (dy / d) * step;
+          advance(i, dx, dy, d);
         }
         continue;
       }
@@ -223,6 +280,8 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
       const dy = y[t] - y[i];
       const d = Math.hypot(dx, dy);
       if (d <= S.range) {
+        // en pointe : continue d'avancer tout en attaquant
+        if (units[i].position === 'front' && d > stopDistance(i)) advance(i, dx, dy, d);
         if (cd[i] > 0) continue;
         cd[i] = Math.max(cd[i], -DT) + S.cooldown;
         const T = units[t].stats;
@@ -249,9 +308,7 @@ export function simulate(units: BattleUnit[], seed: number): BattleResult {
           }
         }
       } else {
-        const step = Math.min(S.speed * DT, d - S.range * 0.9);
-        x[i] += (dx / d) * step;
-        y[i] += (dy / d) * step;
+        advance(i, dx, dy, d);
       }
     }
 
