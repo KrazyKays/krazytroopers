@@ -114,6 +114,10 @@ function sections(st: GameState): Section[] {
           body: [p(b('Oui. '), 'Un soin a les mêmes chances d’être critique qu’un tir et rend alors deux fois plus de PV, sans dépasser les PV max de la cible. Œil de lynx augmente donc aussi les soins.')],
         },
         {
+          title: 'Les dégâts de zone s’appliquent-ils aux soins du Fusil médical ?',
+          body: [p(b('Non. '), 'Chaque soin ne rend des PV qu’à un seul allié, le plus blessé. Le rayon de zone d’un soigneur reste toujours à 0, même avec Munitions explosives ou un bonus de rayon : ses tirs sur l’ennemi ne font donc pas non plus de dégâts de zone.')],
+        },
+        {
           title: 'Un soldat tombé au combat est-il perdu ?',
           body: [
             list(
