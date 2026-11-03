@@ -227,4 +227,8 @@ export interface SpriteLook {
   uniform: string;
   helmet: string;
   weaponId: string;
+  /** Titre Légende : halo doré autour du soldat. */
+  legend?: boolean;
+  /** Légion d'honneur : médaille portée sur la tenue. */
+  medal?: boolean;
 }

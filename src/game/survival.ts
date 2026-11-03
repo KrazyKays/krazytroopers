@@ -1,7 +1,8 @@
 import type { BattleUnit } from './battle';
-import { FIRST_NAMES, MAX_LEVEL, NICKNAMES, TRAINING_PER_SOLDIER, WEAPONS } from './data';
+import { MAX_LEVEL, TRAINING_PER_SOLDIER, WEAPONS } from './data';
 import { survivalWaveLevel } from './enemies';
 import { soldierLook } from './look';
+import { freshName } from './roster';
 import { pick, shuffle, type Rng } from './rng';
 import { computeStats } from './stats';
 import { resolveWeapon } from './weapons';
@@ -70,7 +71,7 @@ export function pickBoon(st: GameState, id: string, rng: Rng = Math.random): Pic
   if (id === 'merc') {
     const merc: Mercenary = {
       id: `m${st.nextId++}`,
-      name: `${pick(rng, FIRST_NAMES)} ${pick(rng, NICKNAMES)}`,
+      name: freshName(st, rng),
       weaponId: pick(rng, WEAPONS.filter((w) => w.droppable && (w.rarity === 'rare' || w.rarity === 'epic') && !w.heal)).id,
       // au niveau qu'aurait un soldat de la puissance de la prochaine vague
       level: Math.min(MAX_LEVEL, Math.max(1, Math.round(0.72 * survivalWaveLevel(run.wave + 1, st.campaignLevel)))),

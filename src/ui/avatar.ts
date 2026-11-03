@@ -20,6 +20,9 @@ const BODY = [
 
 type Rect = [number, number, number, number, string];
 
+// Légion d'honneur : ruban rouge et croix dorée, sur la poitrine
+const MEDAL: Rect[] = [[2, 6, 2, 1, '#d3202f'], [2, 7, 2, 2, '#ffc928'], [2, 7, 1, 1, '#fff2b0']];
+
 function darken(hex: string, f: number): string {
   const n = parseInt(hex.slice(1), 16);
   const c = (v: number) => Math.round(v * f).toString(16).padStart(2, '0');
@@ -104,9 +107,10 @@ export function spriteSvg(look: SpriteLook, cls = 'sprite'): string {
       x = end + 1;
     }
   });
+  if (look.medal) rects.push(...MEDAL);
   const weapon = WEAPONS_BY_ID[look.weaponId] ?? FISTS;
   rects.push(...weaponRects(weapon));
-  return `<svg class="${cls}" viewBox="0 0 20 14" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">${rectsToSvg(rects)}</svg>`;
+  return `<svg class="${cls}${look.legend ? ' sprite-legend' : ''}" viewBox="0 0 20 14" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg">${rectsToSvg(rects)}</svg>`;
 }
 
 export function weaponSvg(weapon: WeaponDef, cls = 'weapon-icon'): string {

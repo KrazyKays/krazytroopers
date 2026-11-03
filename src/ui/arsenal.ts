@@ -16,6 +16,9 @@ const RARITY_PLURAL: Record<Rarity, string> = { common: 'communes', rare: 'rares
 
 const selected = new Set<string>();
 
+type WeaponFilter = 'all' | 'free' | 'equipped';
+let weaponFilter: WeaponFilter = 'all';
+
 // Armes vendables en lot : non équipées (une arme équipée se vend une par une, depuis sa tuile)
 function sellableWeapons(rarity?: Rarity): WeaponItem[] {
   const st = getState();
@@ -202,18 +205,20 @@ export function renderArsenal(): HTMLElement {
   );
   const workshop = isUnlocked(st, 'workshop');
   const selection = sellable.filter((w) => selected.has(w.uid));
+  const shown = sorted.filter((w) => weaponFilter === 'all' || owners.has(w.uid) === (weaponFilter === 'equipped'));
+  const filterChip = (key: WeaponFilter, label: string, count: number) => h('button', { class: `chip${weaponFilter === key ? ' active' : ''}`, onclick: () => { weaponFilter = key; refresh(); } }, `${label} (${count})`);
 
   return h(
     'section',
     null,
-    h('h2', { class: 'section-title' }, `Arsenal (${st.weapons.length})`),
+    h('h2', { class: 'section-title' }, `Armes (${st.weapons.length})`),
     unarmed > 0 &&
       free > 0 &&
       h(
         'p',
         { class: 'warn' },
         `${unarmed} soldat${unarmed > 1 ? 's' : ''} sans arme alors que ${free} arme${free > 1 ? 's sont disponibles' : ' est disponible'}. `,
-        h('button', { class: 'link', onclick: () => goTo('roster') }, "Aller à l'escouade"),
+        h('button', { class: 'link', onclick: () => goTo('roster') }, 'Voir les soldats'),
       ),
     sellable.length > 0 &&
       fold(
@@ -247,19 +252,23 @@ export function renderArsenal(): HTMLElement {
           h('button', { class: 'btn btn-small btn-gold', onclick: () => void sellItems(selection) }, `Vendre la sélection (+${fmt(weaponsValue(selection))} or)`),
         ),
       ),
-    sorted.length === 0
-      ? h('p', { class: 'muted' }, 'Aucune arme pour le moment.')
+    st.weapons.length > 0 && h('div', { class: 'row' }, filterChip('all', 'Toutes', st.weapons.length), filterChip('free', '✓ Libres', free), filterChip('equipped', '🪖 Équipées', owners.size)),
+    shown.length === 0
+      ? h('p', { class: 'muted' }, st.weapons.length === 0 ? 'Aucune arme pour le moment.' : 'Aucune arme dans cette catégorie.')
       : h(
           'div',
           { class: 'weapon-grid' },
-          sorted.map((w) => {
+          shown.map((w) => {
             const def = itemDef(w);
             const info = RARITIES[def.rarity];
             const owner = owners.get(w.uid);
             const value = weaponSellValue(w);
             return h(
               'div',
-              { class: `weapon-card rarity-${def.rarity}`, style: `--rc:${info.color}` },
+              { class: `weapon-card rarity-${def.rarity} ${owner ? 'is-equipped' : 'is-free'}`, style: `--rc:${info.color}` },
+              owner
+                ? h('div', { class: 'weapon-status status-equipped' }, soldierSprite(st, owner), h('span', null, 'Équipée par ', h('button', { class: 'link', title: 'Ouvrir la fiche du soldat', onclick: () => openSoldier(owner.id) }, owner.name)))
+                : h('div', { class: 'weapon-status status-free' }, '✓ Libre'),
               h(
                 'div',
                 { class: 'weapon-head' },
@@ -289,9 +298,6 @@ export function renderArsenal(): HTMLElement {
                 def.armor ? statItem('Armure', `+${fmt(def.armor)}`) : false,
               ),
               weaponTraits(def).length > 0 && h('small', { class: 'weapon-traits' }, weaponTraits(def).join(' · ')),
-              owner
-                ? h('small', { class: 'owner' }, 'Équipée par ', h('button', { class: 'link', title: 'Ouvrir la fiche du soldat', onclick: () => openSoldier(owner.id) }, owner.name))
-                : h('small', { class: 'muted' }, 'Disponible'),
               h(
                 'div',
                 { class: 'weapon-actions' },

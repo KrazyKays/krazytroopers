@@ -22,7 +22,7 @@ import {
 } from './data';
 import { isUnlocked, unlockLevel } from './progress';
 import { nextUid } from './state';
-import { computeStats, dps, weaponForSoldier } from './stats';
+import { computeStats, dps, powerScore, weaponForSoldier } from './stats';
 import { pick, range, weightedPick, type Rng } from './rng';
 import { grantLevelPicks } from './upgrades';
 import { traitFor } from './traits';
@@ -39,10 +39,17 @@ export function rollRarity(rng: Rng, pity: number): Rarity {
   return weightedPick(rng, PULL_RARITIES.map((r) => [r, RARITIES[r].rate] as const));
 }
 
+/** Nom d'une recrue : son prénom n'est repris à un soldat présent que lorsque tous ont déjà servi. */
+export function freshName(st: GameState, rng: Rng): string {
+  const used = new Set([...st.soldiers, ...(st.survival?.mercs ?? [])].map((s) => s.name.split(' ')[0]));
+  const free = FIRST_NAMES.filter((n) => !used.has(n));
+  return `${pick(rng, free.length > 0 ? free : FIRST_NAMES)} ${pick(rng, NICKNAMES)}`;
+}
+
 export function createSoldier(st: GameState, rarity: Rarity, rng: Rng): Soldier {
   const s: Soldier = {
     id: nextUid(st, 's'),
-    name: `${pick(rng, FIRST_NAMES)} ${pick(rng, NICKNAMES)}`,
+    name: freshName(st, rng),
     rarity,
     appearance: {
       skin: Math.floor(rng() * SKIN_TONES.length),
@@ -223,9 +230,10 @@ export function toggleFavorite(st: GameState, id: string): void {
   if (s) s.favorite = !s.favorite;
 }
 
-export type SquadSort = 'hp' | 'dps' | 'level' | 'seniority' | 'favorite';
+export type SquadSort = 'power' | 'hp' | 'dps' | 'level' | 'seniority' | 'favorite';
 
 export const SQUAD_SORTS: { key: SquadSort; label: string }[] = [
+  { key: 'power', label: 'Puissance' },
   { key: 'hp', label: 'PV' },
   { key: 'dps', label: 'DPS' },
   { key: 'level', label: 'Niveau' },
@@ -237,6 +245,8 @@ const seniority = (s: Soldier): number => Number(s.id.slice(1));
 
 function sortValue(st: GameState, s: Soldier, key: SquadSort): number {
   switch (key) {
+    case 'power':
+      return powerScore(computeStats(s, weaponForSoldier(s, st.weapons)));
     case 'hp':
       return computeStats(s, weaponForSoldier(s, st.weapons)).maxHp;
     case 'dps':

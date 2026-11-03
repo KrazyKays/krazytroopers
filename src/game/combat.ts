@@ -321,7 +321,7 @@ function pickCasualties(fallen: readonly string[], seed: number): Set<string> {
 }
 
 /** Une défaite peut-elle tuer les soldats tombés dans ce combat ? */
-function canDie(req: BattleRequest): boolean {
+export function canDie(req: BattleRequest): boolean {
   if (req.mode === 'campaign') return req.level > SAFE_LEVELS;
   // La Tour est un défi de puissance : on y retente sa chance sans perdre personne
   return req.mode !== 'training' && req.mode !== 'tower';

@@ -80,7 +80,7 @@ function doWeaponPull(mode: WeaponMode): void {
     actions: (close) =>
       [
         h('button', { class: 'btn', onclick: close }, 'Continuer'),
-        h('button', { class: 'btn', onclick: () => { close(); goTo('arsenal'); } }, "Voir l'arsenal"),
+        h('button', { class: 'btn', onclick: () => { close(); goTo('arsenal'); } }, 'Voir les armes'),
         againButton(close, `Encore ×${result.weapons.length} — ${fmt(cost)} or`, getState().gold >= cost, () => doWeaponPull(mode)),
       ].filter((b): b is HTMLElement => !!b),
   });
@@ -173,7 +173,7 @@ export function renderRecruit(): HTMLElement {
         'banner-weapon',
         h('span', null, '✦'),
         'Armurerie',
-        'Les armes achetées rejoignent votre arsenal, prêtes à être équipées.',
+        "Les armes achetées rejoignent l'onglet Armes, prêtes à être équipées.",
         armoryOpen && pityMeter(st.weaponPity, 'Arme'),
         !armoryOpen &&
           h('p', { class: 'locked-note' }, `🔒 L'armurerie ouvre après le niveau ${unlockLevel('armory')} de la campagne, qui offre déjà une arme garantie.`),

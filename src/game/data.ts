@@ -55,7 +55,7 @@ export interface UnlockDef {
 export const UNLOCKS: UnlockDef[] = [
   { id: 'tactics', level: 2, label: 'Tactiques', desc: "Choisissez la manière dont votre escouade aborde chaque combat : assaut, rempart, chasse aux blessés…" },
   { id: 'squad4', level: 3, label: "4e place d'escouade", desc: "Engagez jusqu'à 4 soldats par combat." },
-  { id: 'armory', level: 4, label: 'Armurerie', desc: "Achetez des armes au hasard dans l'onglet Recrutement." },
+  { id: 'armory', level: 4, label: 'Armurerie', desc: "Achetez des armes au hasard dans l'onglet Tirages." },
   { id: 'simulation', level: 5, label: 'Simulation', desc: 'Testez votre escouade sans risque face aux adversaires de votre choix.' },
   { id: 'positions', level: 5, label: 'Positions', desc: 'Placez chaque soldat : en pointe, à couvert derrière les boucliers, à distance ou libre.' },
   { id: 'fodder', level: 6, label: 'Chair à canon', desc: 'Sacrifiez les soldats dont vous ne voulez plus contre le Colosse : la garantie de recrutement avance, et sa mort rapporte gros.' },
@@ -251,7 +251,17 @@ export const EMPTY_MODS: Mods = {
 export const FIRST_NAMES = [
   'Bob', 'Rico', 'Jean-Michel', 'Dédé', 'Gaston', 'Kevin', 'Bernadette', 'Mireille', 'Colette', 'Raymonde',
   'Titouan', 'Fanfan', 'Léon', 'Gégé', 'Brigitte', 'Hubert', 'Lulu', 'Momo', 'Pascal', 'Josiane',
-  'Roger', 'Ginette', 'Marcel', 'Odette',
+  'Roger', 'Ginette', 'Marcel', 'Odette', 'Albert', 'Alphonse', 'Anatole', 'André', 'Antoine', 'Armand',
+  'Arlette', 'Babette', 'Basile', 'Béatrice', 'Benoît', 'Berthe', 'Bruno', 'Camille', 'Capucine', 'Charlotte',
+  'Christiane', 'Clovis', 'Corinne', 'Cunégonde', 'Cyril', 'Danielle', 'Denise', 'Désiré', 'Didier', 'Dominique',
+  'Edmond', 'Édith', 'Élise', 'Émile', 'Ernest', 'Eugène', 'Fabrice', 'Félicien', 'Fernand', 'Firmin',
+  'Francine', 'Germaine', 'Gérard', 'Gilbert', 'Gisèle', 'Gontran', 'Gustave', 'Henriette', 'Hortense', 'Hector',
+  'Huguette', 'Igor', 'Irène', 'Isidore', 'Jacqueline', 'Jeannot', 'Jean-Claude', 'Jean-Pierre', 'Jocelyne', 'Jojo',
+  'Jules', 'Julot', 'Léa', 'Lucette', 'Lucien', 'Ludo', 'Maggy', 'Marcelle', 'Margot', 'Marie-Jo',
+  'Martine', 'Maurice', 'Mauricette', 'Max', 'Monique', 'Nadine', 'Nanard', 'Nestor', 'Nicole', 'Norbert',
+  'Octave', 'Olga', 'Oscar', 'Paulette', 'Philibert', 'Pierrot', 'Prosper', 'Raoul', 'René', 'Robert',
+  'Rolande', 'Sidonie', 'Simone', 'Solange', 'Suzette', 'Sylvain', 'Thérèse', 'Théodule', 'Thierry', 'Tonton',
+  'Ursule', 'Valentine', 'Victor', 'Violette', 'Yolande', 'Yvette', 'Yvon', 'Zoé',
 ];
 
 export const NICKNAMES = [

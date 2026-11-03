@@ -100,7 +100,7 @@ function squadPanel(st: GameState): HTMLElement {
   return h(
     'div',
     { class: 'panel' },
-    h('div', { class: 'panel-head' }, h('h3', null, '🪖 Escouade'), h('button', { class: 'btn btn-ghost btn-small', onclick: () => goTo('roster') }, 'Gérer →')),
+    h('div', { class: 'panel-head' }, h('h3', null, '🪖 Soldats'), h('button', { class: 'btn btn-ghost btn-small', onclick: () => goTo('roster') }, 'Gérer →')),
     st.soldiers.length === 0
       ? h('div', { class: 'empty' }, h('p', null, 'Aucun soldat pour l’instant.'), h('button', { class: 'btn btn-primary', onclick: () => goTo('recruit') }, 'Recruter'))
       : h('div', { class: 'mini-squad' }, top.map((s) => h('button', { class: `mini-soldier rarity-${s.rarity}`, title: `${s.name} · Niv. ${s.level}`, onclick: () => openSoldier(s.id) }, soldierSprite(st, s), h('span', null, `Niv. ${s.level}`)))),

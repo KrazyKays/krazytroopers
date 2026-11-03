@@ -20,7 +20,7 @@ import {
   upgradeRank,
   upgradeSummary,
 } from '../game/upgrades';
-import type { GameState, Rarity, Soldier, WeaponDef } from '../game/types';
+import type { GameState, Rarity, Soldier, WeaponDef, WeaponItem } from '../game/types';
 import { h } from './dom';
 import { goTo } from './nav';
 import { confirmDialog, familyTag, fmt, fold, getSquadSort, itemDef, itemTags, openModal, traitTag, positionPicker, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
@@ -77,7 +77,7 @@ export function renderRoster(): HTMLElement {
     return h(
       'section',
       { class: 'panel empty' },
-      h('h2', null, 'Votre escouade est vide'),
+      h('h2', null, 'Aucun soldat'),
       h('p', null, 'Commencez par recruter vos premiers soldats.'),
       h('button', { class: 'btn btn-big btn-gold', onclick: () => goTo('recruit') }, st.freePulls > 0 ? `Recruter (${st.freePulls} tirage${st.freePulls > 1 ? 's' : ''} gratuit${st.freePulls > 1 ? 's' : ''})` : 'Recruter'),
     );
@@ -93,7 +93,7 @@ export function renderRoster(): HTMLElement {
     h(
       'div',
       { class: 'section-head' },
-      h('h2', { class: 'section-title' }, `Escouade · caserne ${st.soldiers.length} / ${barracksCap(st)}`),
+      h('h2', { class: 'section-title' }, `Soldats · caserne ${st.soldiers.length} / ${barracksCap(st)}`),
       firstPending && !selectMode && h('button', { class: 'btn btn-primary', onclick: () => openSoldier(firstPending.id) }, `⬆ Choisir les améliorations (${pending})`),
     ),
     squadToolbar(st),
@@ -263,7 +263,16 @@ export function openSoldier(id: string): void {
       h(
         'div',
         null,
-        h('h2', { class: 'detail-name' }, s.name),
+        h(
+          'div',
+          { class: 'detail-title' },
+          h('h2', { class: 'detail-name' }, s.name),
+          h(
+            'button',
+            { class: `btn btn-small${s.favorite ? ' btn-gold' : ''}`, onclick: () => mutate((state) => toggleFavorite(state, s.id)) },
+            s.favorite ? '★ Favori' : '☆ Ajouter aux favoris',
+          ),
+        ),
         h('div', null, rarityTag(s.rarity), ` · Niveau ${s.level}${s.level >= MAX_LEVEL ? ' (max)' : ''}`, titleTags(s)),
         h('div', { class: 'detail-trait' }, traitTag(s), TRAITS_BY_ID[s.trait] && h('small', { class: 'muted' }, ` ${TRAITS_BY_ID[s.trait].desc}`)),
         xpBar(s),
@@ -300,31 +309,39 @@ export function openSoldier(id: string): void {
     const upgrades = upgradeBlock(st, s, weapon);
 
     const owners = new Map(st.soldiers.filter((x) => x.weaponUid).map((x) => [x.weaponUid as string, x]));
+    const weaponItem = (w: WeaponItem) => {
+      const def = itemDef(w);
+      const owner = owners.get(w.uid);
+      const mine = s.weaponUid === w.uid;
+      return h(
+        'button',
+        {
+          class: `weapon-item${mine ? ' active' : owner ? ' taken' : ''}`,
+          style: `--rc:${RARITIES[def.rarity].color}`,
+          onclick: () => mutate((state) => equipWeapon(state, s.id, w.uid)),
+        },
+        weaponIcon(def),
+        h(
+          'span',
+          null,
+          h('b', { style: `color:${RARITIES[def.rarity].color}` }, def.name, ' ', familyTag(def), ...itemTags(w)),
+          mine ? h('small', null, 'Équipée') : weaponDelta(s, weapon, def),
+          !mine && (owner ? h('small', { class: 'weapon-state state-taken' }, `🪖 Portée par ${owner.name} : échange`) : h('small', { class: 'weapon-state state-free' }, '✓ Libre')),
+        ),
+      );
+    };
+    const byRarity = [...st.weapons].sort((a, b) => RARITY_ORDER.indexOf(WEAPONS_BY_ID[b.defId].rarity) - RARITY_ORDER.indexOf(WEAPONS_BY_ID[a.defId].rarity));
+    const freeWeapons = byRarity.filter((w) => !owners.has(w.uid));
+    const takenWeapons = byRarity.filter((w) => owners.has(w.uid) && w.uid !== s.weaponUid);
     const weaponList = h(
       'div',
       { class: 'weapon-list' },
-      [...st.weapons]
-        .sort((a, b) => RARITY_ORDER.indexOf(WEAPONS_BY_ID[b.defId].rarity) - RARITY_ORDER.indexOf(WEAPONS_BY_ID[a.defId].rarity))
-        .map((w) => {
-          const def = itemDef(w);
-          const owner = owners.get(w.uid);
-          return h(
-            'button',
-            {
-              class: `weapon-item${s.weaponUid === w.uid ? ' active' : ''}`,
-              style: `--rc:${RARITIES[def.rarity].color}`,
-              onclick: () => mutate((state) => equipWeapon(state, s.id, w.uid)),
-            },
-            weaponIcon(def),
-            h(
-              'span',
-              null,
-              h('b', { style: `color:${RARITIES[def.rarity].color}` }, def.name, ' ', familyTag(def), ...itemTags(w)),
-              s.weaponUid === w.uid ? h('small', null, 'Équipée') : weaponDelta(s, weapon, def),
-              owner && owner.id !== s.id && h('small', { class: 'muted owner' }, `Équipée par ${owner.name} (échange)`),
-            ),
-          );
-        }),
+      byRarity.filter((w) => w.uid === s.weaponUid).map(weaponItem),
+      freeWeapons.length > 0 && h('h4', { class: 'weapon-group' }, `Libres (${freeWeapons.length})`),
+      freeWeapons.map(weaponItem),
+      takenWeapons.length > 0 && h('h4', { class: 'weapon-group' }, `Portées par d'autres soldats (${takenWeapons.length})`),
+      takenWeapons.map(weaponItem),
+      h('h4', { class: 'weapon-group' }, 'Sans arme'),
       h(
         'button',
         { class: `weapon-item${s.weaponUid === null ? ' active' : ''}`, onclick: () => mutate((state) => equipWeapon(state, s.id, null)) },
@@ -361,11 +378,6 @@ export function openSoldier(id: string): void {
       h(
         'div',
         { class: 'detail-actions' },
-        h(
-          'button',
-          { class: `btn${s.favorite ? ' btn-gold' : ''}`, onclick: () => mutate((state) => toggleFavorite(state, s.id)) },
-          s.favorite ? '★ Retirer des favoris' : '☆ Ajouter aux favoris',
-        ),
         h(
           'button',
           {

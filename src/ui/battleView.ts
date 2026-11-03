@@ -416,7 +416,7 @@ function pendingPicks(ids: ReadonlySet<string>): HTMLElement | false {
           ),
         );
       }),
-      ...(list.length > 3 ? [h('p', { class: 'muted small' }, `Et ${list.length - 3} autre${list.length - 3 > 1 ? 's' : ''} soldat${list.length - 3 > 1 ? 's' : ''} : voir l'onglet Escouade.`)] : []),
+      ...(list.length > 3 ? [h('p', { class: 'muted small' }, `Et ${list.length - 3} autre${list.length - 3 > 1 ? 's' : ''} soldat${list.length - 3 > 1 ? 's' : ''} : voir l'onglet Soldats.`)] : []),
     );
   };
   draw();
@@ -486,6 +486,19 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
       s.kills > 0 && h('span', { class: 'muted' }, ` (${s.kills} élimination${s.kills > 1 ? 's' : ''})`),
     );
   // Une mort, un nouveau niveau ou un soldat tombé pour une victoire se voient tout de suite ; le détail de chaque soldat reste à la demande
+  const dead = report.soldiers.filter((s) => s.died).length;
+  const brought = report.soldiers.filter((s) => s.wounded).length;
+  const lossNote =
+    !report.won &&
+    !report.colossus &&
+    dead + brought > 0 &&
+    h(
+      'p',
+      { class: `note ${dead > 0 ? 'note-bad' : 'note-good'}` },
+      dead > 0
+        ? `☠️ ${dead} soldat${dead > 1 ? 's' : ''} mort${dead > 1 ? 's' : ''} définitivement${brought > 0 ? `, ${brought} rapatrié${brought > 1 ? 's' : ''} sans XP` : ''}.`
+        : `Personne n'est mort : ${brought > 1 ? `les ${brought} soldats tombés sont rapatriés` : 'le soldat tombé est rapatrié'}, sans XP.`,
+    );
   const notable = report.soldiers.filter((s) => s.died || s.levelsGained > 0 || (report.won && s.wounded));
   const details = h(
     'table',
@@ -497,6 +510,7 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
     'div',
     { class: `result ${report.won || report.colossus ? 'won' : 'lost'}` },
     h('h2', null, title),
+    lossNote,
     report.colossus && h('p', { class: report.colossus.killed ? 'levelup' : 'muted' }, `${fmt(report.colossus.dealt)} dégâts infligés. ${report.colossus.killed ? 'Un Colosse plus résistant prend sa place.' : `Il lui reste ${fmt(report.colossus.left)} / ${fmt(report.colossus.maxHp)} PV.`}`),
     report.stars && h('div', { class: 'result-stars' }, stars(report.stars.got, 3, 'stars-huge'), report.stars.gained > 0 ? h('small', null, `+${report.stars.gained} nouvelle${report.stars.gained > 1 ? 's' : ''} étoile${report.stars.gained > 1 ? 's' : ''}`) : report.stars.best > report.stars.got && h('small', { class: 'muted' }, `Record : ${report.stars.best} ★`)),
     report.firstClear && h('p', { class: 'levelup' }, `Niveau ${report.level} de la campagne terminé !`),

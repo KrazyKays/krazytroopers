@@ -209,10 +209,6 @@ input[type='checkbox'] {
   text-align: center;
 }
 
-.nav-short {
-  display: none;
-}
-
 .nav-item .badge {
   margin-left: auto;
 }
@@ -1022,8 +1018,42 @@ input[type='checkbox'] {
   color: #b83226;
 }
 
-.fav-star {
+.fav-toggle {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--line-strong);
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.fav-toggle:hover {
   color: var(--star);
+  background: var(--surface-3);
+}
+
+.fav-toggle.on {
+  color: var(--star);
+}
+
+.card-name-row,
+.row-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.sprite-legend,
+.unit .sprite.sprite-legend {
+  filter: drop-shadow(0 0 2px #ffd23f) drop-shadow(0 0 5px #ffb300) drop-shadow(0 0 9px rgba(255, 190, 30, 0.75));
 }
 
 .card-sub {
@@ -1041,9 +1071,11 @@ input[type='checkbox'] {
 .card-stats {
   display: flex;
   flex-wrap: wrap;
+  justify-content: space-between;
   gap: 0.2rem 0.75rem;
   font-size: 0.84rem;
   font-variant-numeric: tabular-nums;
+  color: var(--muted);
 }
 
 .card-pills {
@@ -1063,7 +1095,7 @@ input[type='checkbox'] {
 
 .soldier-row {
   display: grid;
-  grid-template-columns: 1.6rem 42px minmax(120px, 1.6fr) 120px 80px 80px 64px minmax(0, 2fr);
+  grid-template-columns: 1.6rem 42px minmax(120px, 1.6fr) 120px 72px 80px 84px minmax(0, 2fr);
   align-items: center;
   gap: 0.6rem;
   padding: 0.35rem 0.7rem;
@@ -1122,6 +1154,11 @@ input[type='checkbox'] {
 .row-stat {
   font-variant-numeric: tabular-nums;
   color: var(--muted);
+}
+
+.row-power {
+  font-weight: 700;
+  color: var(--text);
 }
 
 .row-pills {
@@ -1713,6 +1750,11 @@ input[type='checkbox'] {
   border: 1px solid var(--line);
   border-radius: 16px;
   box-shadow: var(--shadow-lg);
+}
+
+.launch-note {
+  flex-basis: 100%;
+  margin: 0;
 }
 
 .launch-buttons {
@@ -2479,7 +2521,30 @@ input[type='checkbox'] {
   color: var(--bad);
 }
 
-.owner {
+.weapon-group {
+  grid-column: 1 / -1;
+  margin: 0.4rem 0 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.weapon-item.taken {
+  background: var(--surface-3);
+}
+
+.weapon-item.taken .weapon-icon {
+  opacity: 0.55;
+}
+
+.weapon-state {
+  font-weight: 700;
+}
+
+.state-free {
+  color: var(--good);
+}
+
+.state-taken {
   color: var(--muted);
 }
 
@@ -2686,6 +2751,51 @@ input[type='checkbox'] {
   border-top: 4px solid var(--rc);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
+}
+
+.weapon-card.is-equipped {
+  background: var(--surface-3);
+  box-shadow: none;
+}
+
+.weapon-card.is-equipped .weapon-art {
+  background: var(--surface-2);
+}
+
+.weapon-card.is-equipped .weapon-art .weapon-icon {
+  opacity: 0.55;
+}
+
+.weapon-card.is-free {
+  outline: 2px solid color-mix(in srgb, var(--good) 45%, transparent);
+  outline-offset: -2px;
+}
+
+.weapon-status {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 1.9rem;
+  padding: 0.15rem 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  border-radius: 8px;
+}
+
+.status-free {
+  color: var(--good);
+  background: var(--good-soft);
+}
+
+.status-equipped {
+  color: var(--muted);
+  background: var(--surface);
+}
+
+.status-equipped .sprite {
+  flex-shrink: 0;
+  width: 30px;
+  height: auto;
 }
 
 .weapon-head {
@@ -3332,12 +3442,31 @@ input[type='checkbox'] {
   }
 
   .soldier-row {
-    grid-template-columns: 1.6rem 40px minmax(0, 1fr) auto;
+    grid-template-columns: 1.6rem 40px repeat(3, minmax(0, 1fr));
+    gap: 0.1rem 0.5rem;
   }
 
-  .soldier-row .row-stat,
+  .soldier-row .row-check,
+  .soldier-row .row-portrait {
+    grid-row: span 2;
+  }
+
+  .soldier-row .row-name-cell {
+    grid-column: span 2;
+  }
+
+  .soldier-row .row-level {
+    text-align: right;
+  }
+
+  .soldier-row .row-level .rarity-tag,
+  .soldier-row .row-title,
   .soldier-row .row-pills {
     display: none;
+  }
+
+  .soldier-row .row-stat {
+    font-size: 0.8rem;
   }
 }
 
@@ -3381,14 +3510,6 @@ input[type='checkbox'] {
     padding: 0.4rem 0.1rem;
     font-size: 0.66rem;
     text-align: center;
-  }
-
-  .nav-label.has-short {
-    display: none;
-  }
-
-  .nav-short {
-    display: inline;
   }
 
   .nav-item .badge {
@@ -3703,7 +3824,15 @@ input[type='checkbox'] {
 }
 
 .detail-name {
-  margin: 0 0 0.2rem;
+  margin: 0;
+}
+
+.detail-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3rem 0.6rem;
+  margin-bottom: 0.2rem;
 }
 
 .stats-main {

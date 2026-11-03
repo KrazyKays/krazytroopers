@@ -1,13 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { simulate, type BattleUnit } from './battle';
-import { campaignXp, cashOutSurvival, dailyGold, estimateBattle, launchBattle, launchFodder } from './combat';
-import { BOSS_FREE_PULLS, COLOSSUS_PULLS, DAILY_PULL_EVERY, FORGE_FEE, PITY_LIMIT, MAX_LEVEL, SQUAD_BASE, TRAINING_PER_SOLDIER, UNLOCKS, WEAPONS_BY_ID } from './data';
+import { campaignXp, canDie, cashOutSurvival, dailyGold, estimateBattle, launchBattle, launchFodder } from './combat';
+import { BOSS_FREE_PULLS, COLOSSUS_PULLS, FIRST_NAMES, DAILY_PULL_EVERY, FORGE_FEE, PITY_LIMIT, MAX_LEVEL, SQUAD_BASE, TRAINING_PER_SOLDIER, UNLOCKS, WEAPONS_BY_ID } from './data';
 import { buildDailyEnemies, buildScarecrow, colossusMaxHp, dailyKey } from './enemies';
 import { squadMax, unlockLevel, unlocksBetween } from './progress';
+import { soldierLook } from './look';
 import { mulberry32 } from './rng';
-import { createSoldier, forgeWeapons, trainingCost } from './roster';
+import { createSoldier, forgeWeapons, sortSquad, trainingCost } from './roster';
 import { createInitialState, parseSave } from './state';
-import { computeStats } from './stats';
+import { computeStats, powerScore, weaponForSoldier } from './stats';
 import { recommendedUpgrade, upgradeGains } from './upgrades';
 import { pickBoon } from './survival';
 import type { GameState } from './types';
@@ -30,7 +31,47 @@ function squadState(n: number, level: number, weapon = 'rifle'): GameState {
 
 const ids = (st: GameState) => st.soldiers.map((s) => s.id);
 
+describe('liste des soldats', () => {
+  it('ne reprend un prénom déjà présent que lorsque tous ont servi', () => {
+    const st = createInitialState();
+    const rng = mulberry32(7);
+    const first = (s: { name: string }) => s.name.split(' ')[0];
+    for (let i = 0; i < FIRST_NAMES.length; i++) st.soldiers.push(createSoldier(st, 'common', rng));
+    expect(new Set(st.soldiers.map(first)).size).toBe(FIRST_NAMES.length);
+    expect(FIRST_NAMES).toContain(first(createSoldier(st, 'common', rng)));
+  });
+
+  it('trie par puissance décroissante', () => {
+    const st = squadState(3, 1);
+    st.soldiers[2].level = 20;
+    const sorted = sortSquad(st, 'power');
+    const power = (s: GameState['soldiers'][number]) => powerScore(computeStats(s, weaponForSoldier(s, st.weapons)));
+    expect(sorted[0].id).toBe(st.soldiers[2].id);
+    expect(power(sorted[0])).toBeGreaterThanOrEqual(power(sorted[1]));
+    expect(power(sorted[1])).toBeGreaterThanOrEqual(power(sorted[2]));
+  });
+
+  it('montre le halo de Légende et la médaille de la Légion sur le soldat', () => {
+    const st = squadState(1, 1);
+    const s = st.soldiers[0];
+    expect(soldierLook(s)).toMatchObject({ legend: false, medal: false });
+    s.titles = ['legende'];
+    expect(soldierLook(s)).toMatchObject({ legend: true, medal: false });
+    s.titles = ['legende', 'legion'];
+    expect(soldierLook(s)).toMatchObject({ legend: true, medal: true });
+  });
+});
+
 describe('rapatriement des blessés', () => {
+  it('annonce la mort définitive seulement là où une défaite peut tuer', () => {
+    expect(canDie({ mode: 'campaign', level: 5, squad: [] })).toBe(false);
+    expect(canDie({ mode: 'campaign', level: 6, squad: [] })).toBe(true);
+    expect(canDie({ mode: 'training', squad: [] })).toBe(false);
+    expect(canDie({ mode: 'tower', squad: [] })).toBe(false);
+    expect(canDie({ mode: 'daily', squad: [] })).toBe(true);
+    expect(canDie({ mode: 'survival', squad: [] })).toBe(true);
+  });
+
   it('garde dans l’escouade les soldats tombés lors d’une victoire, avec la même XP que les autres', () => {
     let found = false;
     for (let seed = 1; seed < 200 && !found; seed++) {

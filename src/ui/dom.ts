@@ -13,6 +13,7 @@ type Props = {
   accept?: string;
   src?: string;
   alt?: string;
+  'aria-label'?: string;
   rows?: number;
   data?: Record<string, string>;
   onclick?: (e: MouseEvent) => void;

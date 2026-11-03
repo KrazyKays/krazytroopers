@@ -4,7 +4,7 @@ import { AFFIXES_BY_ID, resolveWeapon } from '../game/weapons';
 import { getState, getVersion, mutate, refresh, replaceState } from '../game/state';
 import { soldierLook } from '../game/look';
 import { computeStats, dps, powerScore, weaponForSoldier, xpForNext } from '../game/stats';
-import { SQUAD_SORTS, sortSquad, type SquadSort } from '../game/roster';
+import { SQUAD_SORTS, sortSquad, toggleFavorite, type SquadSort } from '../game/roster';
 import { FAMILY_LABELS, POSITIONS, POSITIONS_BY_ID, weaponFamily } from '../game/squad';
 import type { GameState, Rarity, Soldier, TitleId, WeaponDef, WeaponItem } from '../game/types';
 import { spriteSvg, weaponSvg } from './avatar';
@@ -157,6 +157,25 @@ export interface CardOpts {
   disabledReason?: string;
   /** Prix à payer si ce soldat est engagé (entraînement payant). */
   cost?: { text: string; title: string };
+  /** Étoile cliquable pour marquer le soldat en favori sans ouvrir sa fiche. */
+  favToggle?: boolean;
+}
+
+function favToggle(s: Soldier): HTMLElement {
+  const label = s.favorite ? 'Retirer des favoris' : 'Ajouter aux favoris';
+  return h(
+    'button',
+    {
+      class: `fav-toggle${s.favorite ? ' on' : ''}`,
+      title: label,
+      'aria-label': label,
+      onclick: (e) => {
+        e.stopPropagation();
+        mutate((st) => toggleFavorite(st, s.id));
+      },
+    },
+    s.favorite ? '★' : '☆',
+  );
 }
 
 const costPill = (opts: CardOpts) => opts.cost && h('span', { class: 'pill pill-cost', title: opts.cost.title }, opts.cost.text);
@@ -183,8 +202,9 @@ export function soldierCard(st: GameState, s: Soldier, opts: CardOpts = {}): HTM
     h(
       'div',
       { class: 'card-body' },
-      h('div', { class: nameClass }, s.favorite && h('span', { class: 'fav-star', title: 'Favori' }, '★ '), s.name),
+      h('div', { class: 'card-name-row' }, opts.favToggle && favToggle(s), h('div', { class: nameClass }, s.name)),
       h('div', { class: 'card-sub' }, h('span', { class: 'card-level' }, `Niv. ${s.level}`), TRAITS_BY_ID[s.trait] && h('span', { class: 'card-trait', title: `${TRAITS_BY_ID[s.trait].name} : ${TRAITS_BY_ID[s.trait].desc}` }, TRAITS_BY_ID[s.trait].icon), h('span', { class: 'card-power', title: 'Puissance : résume les PV, les dégâts, la portée et les bonus' }, `⚡ ${fmt(powerScore(stats))}`)),
+      h('div', { class: 'card-stats' }, h('span', { title: 'Points de vie : compare les tanks entre eux' }, `PV ${fmt(stats.maxHp)}`), h('span', { title: 'Dégâts par seconde : compare les attaquants entre eux' }, `DPS ${fmt(dps(stats), 1)}`)),
       xpBar(s),
       h('div', { class: 'card-pills' }, statusPills(s, weapon), costPill(opts)),
     ),
@@ -208,12 +228,12 @@ export function soldierRow(st: GameState, s: Soldier, opts: CardOpts = {}): HTML
     h('div', { class: 'row-portrait' }, soldierSprite(st, s)),
     h(
       'div',
-      { class: nameClass },
-      s.favorite && h('span', { class: 'fav-star', title: 'Favori' }, '★ '),
-      s.name,
-      s.titles.map((t) => h('span', { class: `row-title title-badge-${t}`, title: TITLES[t].label }, ` ${TITLE_BADGE_ICON[t]}`)),
+      { class: 'row-name-cell' },
+      opts.favToggle && favToggle(s),
+      h('div', { class: nameClass }, s.name, s.titles.map((t) => h('span', { class: `row-title title-badge-${t}`, title: TITLES[t].label }, ` ${TITLE_BADGE_ICON[t]}`))),
     ),
     h('span', { class: 'row-level' }, rarityTag(s.rarity), ` Niv. ${s.level}`),
+    h('span', { class: 'row-stat row-power', title: 'Puissance : résume les PV, les dégâts, la portée et les bonus' }, `⚡ ${fmt(powerScore(stats))}`),
     h('span', { class: 'row-stat' }, `PV ${fmt(stats.maxHp)}`),
     h('span', { class: 'row-stat' }, `DPS ${fmt(dps(stats), 1)}`),
     h('span', { class: 'row-pills' }, statusPills(s, weapon), costPill(opts)),
@@ -278,7 +298,8 @@ export function squadToolbar(st: GameState): HTMLElement {
   rarity.value = rarityFilter;
   const chip = (active: boolean, label: string, onclick: () => void, title?: string) => h('button', { class: `chip${active ? ' active' : ''}`, title, onclick }, label);
   const filtered = squadFilter !== 'all' || rarityFilter !== 'all';
-  const label = `Filtres et tri${filtered ? ` : ${visibleSquad(st).length} / ${st.soldiers.length} soldats` : ''}`;
+  const sortLabel = SQUAD_SORTS.find((o) => o.key === squadSort)!.label;
+  const label = `Filtres et tri · tri : ${sortLabel}${filtered ? ` · ${visibleSquad(st).length} / ${st.soldiers.length} soldats` : ''}`;
   return fold('squad-filters', label, h(
     'div',
     { class: 'squad-toolbar' },
@@ -313,8 +334,8 @@ export function squadView(st: GameState, optsFor: (s: Soldier) => CardOpts): HTM
     );
   }
   return squadLayout === 'list'
-    ? h('div', { class: 'soldier-list' }, list.map((s) => soldierRow(st, s, optsFor(s))))
-    : h('div', { class: 'grid' }, list.map((s) => soldierCard(st, s, optsFor(s))));
+    ? h('div', { class: 'soldier-list' }, list.map((s) => soldierRow(st, s, { favToggle: true, ...optsFor(s) })))
+    : h('div', { class: 'grid' }, list.map((s) => soldierCard(st, s, { favToggle: true, ...optsFor(s) })));
 }
 
 // ---------- Comparaison d'armes ----------

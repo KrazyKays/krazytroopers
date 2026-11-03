@@ -9,5 +9,7 @@ export function soldierLook(s: Soldier, weapon: WeaponDef = FISTS): SpriteLook {
     uniform: UNIFORM_COLORS[a.uniform],
     helmet: HELMET_COLORS[a.helmet],
     weaponId: weapon.id,
+    legend: s.titles.includes('legende'),
+    medal: s.titles.includes('legion'),
   };
 }

@@ -4,7 +4,9 @@ import {
   campaignXp,
   canSacrifice,
   canTrain,
+  canDie,
   cashOutSurvival,
+  deathsAmong,
   dailyDone,
   dailyGold,
   DEFAULT_SIMULATION,
@@ -138,6 +140,21 @@ function estimateLine(est: SimulationEstimate): HTMLElement {
     h('div', { class: 'odds-gauge' }, h('div', { class: 'odds-fill', style: `width:${rate * 100}%` })),
     h('div', { class: 'odds-text' }, h('b', null, `${verdict} · ${Math.round(rate * 100)} % de victoire`), h('small', null, deaths < 0.05 ? 'Aucune perte attendue' : `~${fmt(deaths, 1)} soldat${deaths >= 1.5 ? 's' : ''} perdu${deaths >= 1.5 ? 's' : ''} en moyenne (mort définitive)`)),
   );
+}
+
+// Le risque reste sous les yeux au moment de lancer : les règles détaillées, elles, sont repliées dans le briefing
+function defeatNote(st: GameState, level: number, squad: Soldier[]): HTMLElement | false {
+  if (mode === 'simulation' || mode === 'fodder') return false;
+  if (!canDie(battleRequest(st, level))) {
+    return mode === 'campaign' && h('p', { class: 'note note-good small launch-note' }, `🛟 Niveau d'apprentissage : une défaite ne tue personne jusqu'au niveau ${SAFE_LEVELS}. Ensuite, les morts seront définitives.`);
+  }
+  const n = squad.length;
+  const deaths = deathsAmong(n);
+  const risk =
+    n === 0 ? 'un soldat tombé sur trois meurt pour de bon, tiré au hasard, favoris compris.'
+    : n === 1 ? `${squad[0].name} ne reviendra pas s'il tombe.`
+    : `vous ne pourrez pas rapatrier tout le monde. ${deaths > 1 ? "Jusqu'à " : ''}${deaths} soldat${deaths > 1 ? 's' : ''} sur ${n} ${deaths > 1 ? 'mourront' : 'mourra'} pour de bon, tiré${deaths > 1 ? 's' : ''} au hasard, favoris compris.`;
+  return h('p', { class: 'note note-bad small launch-note' }, h('b', null, '☠️ Mort définitive'), ` : en cas de défaite, ${risk}`);
 }
 
 // Carte de campagne : un chapitre de CHAPTER_SIZE niveaux par décor, parcouru en lacet (niveaux terminés, à conquérir, verrouillés)
@@ -791,6 +808,6 @@ export function renderCombat(): HTMLElement {
     tabs,
     h('div', { class: 'combat-cols' }, info, prep),
     picker,
-    !lockId && h('div', { class: 'launch-bar' }, est ? estimateLine(est) : h('span', { class: 'muted small' }, mode === 'simulation' ? 'Simulation : aucune perte réelle.' : mode === 'fodder' ? 'Aucun soldat engagé ne reviendra, ni son arme.' : 'Sélectionnez votre escouade pour voir vos chances.'), h('div', { class: 'launch-buttons' }, quickPick || launchBtn)),
+    !lockId && h('div', { class: 'launch-bar' }, defeatNote(st, level, picked), est ? estimateLine(est) : h('span', { class: 'muted small' }, mode === 'simulation' ? 'Simulation : aucune perte réelle.' : mode === 'fodder' ? 'Aucun soldat engagé ne reviendra, ni son arme.' : 'Sélectionnez votre escouade pour voir vos chances.'), h('div', { class: 'launch-buttons' }, quickPick || launchBtn)),
   );
 }
