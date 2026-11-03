@@ -136,7 +136,7 @@ function sections(st: GameState): Section[] {
           body: [
             list(
               [b('Victoire : '), 'il est rapatrié et gagne la même XP que les autres : il est souvent tombé pour les protéger.'],
-              [b('Défaite ou temps écoulé : '), `un tiers des soldats tombés meurt définitivement (arrondi au supérieur), les autres sont rapatriés sans XP. C’est valable en campagne, au défi du jour et en survie. Les ${SAFE_LEVELS} premiers niveaux de campagne ne tuent personne.`],
+              [b('Défaite ou temps écoulé : '), `vous perdez définitivement un seul soldat, quelle que soit la taille de l’escouade. Si plusieurs sont tombés, vous choisissez lequel ; les autres sont rapatriés sans XP. C’est valable au défi du jour, en survie et sur les nouveaux niveaux de campagne. Les ${SAFE_LEVELS} premiers niveaux et les niveaux déjà conquis ne tuent personne.`],
               [b('Entraînement et simulation : '), 'il ne risque rien.'],
               [b('Chair à canon : '), 'tout soldat engagé est perdu, même en cas de victoire.'],
             ),
@@ -148,7 +148,7 @@ function sections(st: GameState): Section[] {
         },
         {
           title: 'Que se passe-t-il si le combat dure trop longtemps ?',
-          body: [p('Un combat s’arrête après 120 secondes de jeu. Sans vainqueur, il compte comme une défaite : un tiers des soldats déjà tombés meurt, et ceux restés debout gagnent l’XP réduite d’une défaite.')],
+          body: [p('Un combat s’arrête après 120 secondes de jeu. Sans vainqueur, il compte comme une défaite : si des soldats sont déjà tombés, vous en perdez un, et ceux restés debout gagnent l’XP réduite d’une défaite.')],
         },
         {
           title: 'Le vol de vie fonctionne-t-il sur les dégâts de zone ?',
@@ -160,7 +160,7 @@ function sections(st: GameState): Section[] {
         },
         {
           title: 'Un défi du jour perdu peut-il être retenté ?',
-          body: [p('Non : une seule tentative par jour, gagnée ou perdue, et une défaite remet la série de victoires à zéro. Comme en campagne, une défaite tue les soldats tombés.')],
+          body: [p('Non : une seule tentative par jour, gagnée ou perdue, et une défaite remet la série de victoires à zéro. Comme sur un nouveau niveau de campagne, une défaite coûte un soldat, à choisir parmi les tombés.')],
         },
         {
           title: 'Dernier souffle fonctionne-t-il à chaque vague de survie ?',
@@ -180,7 +180,7 @@ function sections(st: GameState): Section[] {
         },
         {
           title: 'Pourquoi rejouer d’anciens niveaux ?',
-          body: [p('Pour décrocher les étoiles manquantes, remplir la jauge de butin et gagner de l’or et de l’XP. Un niveau rejoué rapporte toutefois bien moins d’or et d’XP que sa première victoire, et une défaite y reste mortelle au-delà des premiers niveaux.')],
+          body: [p('Pour décrocher les étoiles manquantes, remplir la jauge de butin et gagner de l’or et de l’XP. Un niveau rejoué rapporte toutefois bien moins d’or et d’XP que sa première victoire. En contrepartie, une défaite n’y tue personne.')],
         },
       ],
     },
@@ -430,7 +430,7 @@ function sections(st: GameState): Section[] {
         {
           title: 'Survie',
           body: [
-            p(`Enchaînez les vagues avec les mêmes soldats, qui ne récupèrent que ${Math.round(SURVIVAL_REST_HEAL * 100)} % de leurs PV entre deux vagues. Les premières vagues sont plus faciles que votre niveau de campagne, puis chaque vague monte d’un niveau. Un soldat tombé lors d’une vague gagnée est rapatrié et quitte l’expédition. L’or s’accumule dans un pot : encaissez-le quand vous voulez, car une défaite n’en laisse que la moitié et tue les soldats tombés.`),
+            p(`Enchaînez les vagues avec les mêmes soldats, qui ne récupèrent que ${Math.round(SURVIVAL_REST_HEAL * 100)} % de leurs PV entre deux vagues. Les premières vagues sont plus faciles que votre niveau de campagne, puis chaque vague monte d’un niveau. Un soldat tombé lors d’une vague gagnée est rapatrié et quitte l’expédition. L’or s’accumule dans un pot : encaissez-le quand vous voulez, car une défaite n’en laisse que la moitié et coûte un soldat, à choisir parmi les tombés.`),
             p(`Après chaque vague gagnée, choisissez un bonus parmi ${BOON_CHOICES} pour tout le reste de l’expédition. Les bonus se cumulent ; un Contrat juteux ajoute ${Math.round(GREED_BONUS * 100)} % d’or au pot à chaque vague, et jusqu’à ${MAX_MERCS} mercenaires peuvent vous rejoindre (sans XP). Si seuls des mercenaires restent debout après une vague gagnée, l’expédition rentre avec tout le pot.`),
             list(...SURVIVAL_BOONS.map((bo) => [b(`${bo.icon} ${bo.name} : `), bo.desc])),
           ],

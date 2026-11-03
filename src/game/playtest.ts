@@ -1,4 +1,4 @@
-import { cashOutSurvival, dailyDone, estimateBattle, launchBattle, launchFodder, type BattleReport, type BattleRequest } from './combat';
+import { cashOutSurvival, chooseLoss, dailyDone, estimateBattle, launchBattle, launchFodder, type BattleReport, type BattleRequest } from './combat';
 import { DT } from './battle';
 import { FORGE_FEE, FORGE_INPUT, MAX_LEVEL, PULL_COST, RARITIES, RARITY_ORDER, WEAPON_PULL_COST, WEAPONS_BY_ID } from './data';
 import { dailyKey, isBossLevel } from './enemies';
@@ -379,6 +379,11 @@ function run(profile: Profile, seed: number, opts: PlayOptions): Playthrough {
   const fight = (req: BattleRequest): BattleReport | null => {
     const r = launchBattle(st, req, Math.floor(rand() * 2 ** 32));
     if (!r.ok) return null;
+    // Comme un joueur, le bot laisse derrière lui le moins précieux des soldats tombés
+    if (st.pendingLoss) {
+      const lost = st.soldiers.filter((s) => st.pendingLoss!.includes(s.id)).sort((a, b) => power(st, a) - power(st, b))[0];
+      chooseLoss(st, lost.id, r.report);
+    }
     note(r.report, r.result.ticks);
     return r.report;
   };

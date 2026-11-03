@@ -6,7 +6,6 @@ import {
   canTrain,
   canDie,
   cashOutSurvival,
-  deathsAmong,
   dailyDone,
   dailyGold,
   DEFAULT_SIMULATION,
@@ -59,7 +58,7 @@ import { getState, mutate, refresh } from '../game/state';
 import { weaponForSoldier } from '../game/stats';
 import type { GameState, Soldier } from '../game/types';
 import { h } from './dom';
-import { boonPicker, openBattle } from './battleView';
+import { boonPicker, lossPicker, openBattle } from './battleView';
 import { biomeOfChapter, CHAPTER_SIZE, chapterOf } from '../game/biomes';
 import { BOONS_BY_ID } from '../game/survival';
 import { confirmDialog, fmt, fold, getSquadSort, positionPicker, progressBar, soldierSprite, squadToolbar, squadView, stars, toast } from './components';
@@ -132,7 +131,8 @@ function currentBattleEstimate(st: GameState, req: BattleRequest): SimulationEst
 function estimateLine(est: SimulationEstimate): HTMLElement {
   const rate = est.wins / est.runs;
   const tone = rate >= 0.8 ? 'good' : rate >= 0.5 ? 'warn' : 'bad';
-  const verdict = rate >= 0.8 ? 'Combat sûr' : rate >= 0.5 ? 'Combat risqué' : 'Très dangereux';
+  // « Sûr » est une promesse : à 80 %, un combat sur cinq se perd encore
+  const verdict = rate >= 0.95 ? 'Combat sûr' : rate >= 0.8 ? 'Combat favorable' : rate >= 0.5 ? 'Combat risqué' : 'Très dangereux';
   const deaths = est.avgDeaths;
   return h(
     'div',
@@ -145,15 +145,13 @@ function estimateLine(est: SimulationEstimate): HTMLElement {
 // Le risque reste sous les yeux au moment de lancer : les règles détaillées, elles, sont repliées dans le briefing
 function defeatNote(st: GameState, level: number, squad: Soldier[]): HTMLElement | false {
   if (mode === 'simulation' || mode === 'fodder') return false;
-  if (!canDie(battleRequest(st, level))) {
-    return mode === 'campaign' && h('p', { class: 'note note-good small launch-note' }, `🛟 Niveau d'apprentissage : une défaite ne tue personne jusqu'au niveau ${SAFE_LEVELS}. Ensuite, les morts seront définitives.`);
+  if (!canDie(st, battleRequest(st, level))) {
+    if (mode !== 'campaign') return false;
+    return h('p', { class: 'note note-good small launch-note' }, level <= SAFE_LEVELS ? `🛟 Niveau d'apprentissage : une défaite ne tue personne jusqu'au niveau ${SAFE_LEVELS}. Ensuite, chaque nouveau niveau perdu pourra coûter un soldat.` : '🛟 Niveau déjà conquis : le rejouer ne met aucun soldat en danger de mort.');
   }
-  const n = squad.length;
-  const deaths = deathsAmong(n);
   const risk =
-    n === 0 ? 'un soldat tombé sur trois meurt pour de bon, tiré au hasard, favoris compris.'
-    : n === 1 ? `${squad[0].name} ne reviendra pas s'il tombe.`
-    : `vous ne pourrez pas rapatrier tout le monde. ${deaths > 1 ? "Jusqu'à " : ''}${deaths} soldat${deaths > 1 ? 's' : ''} sur ${n} ${deaths > 1 ? 'mourront' : 'mourra'} pour de bon, tiré${deaths > 1 ? 's' : ''} au hasard, favoris compris.`;
+    squad.length === 1 ? `${squad[0].name} ne reviendra pas s'il tombe.`
+    : 'un soldat ne reviendra pas. Vous choisirez lequel parmi ceux qui sont tombés.';
   return h('p', { class: 'note note-bad small launch-note' }, h('b', null, '☠️ Mort définitive'), ` : en cas de défaite, ${risk}`);
 }
 
@@ -478,7 +476,7 @@ function dailyInfo(st: GameState): HTMLElement {
     done
       ? h('p', { class: 'note note-good' }, `Défi déjà tenté. Revenez demain${st.dailyStreak > 0 ? ` pour prolonger votre série (${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''})` : ''} !`)
       : rewards(`🪙 ${fmt(dailyGold(level, streakNext))} or`, streakNext % DAILY_PULL_EVERY === 0 && '🎟️ 1 tirage', '🔫 arme de boss', `✨ ${fmt(campaignXp(level))} XP`),
-    h('p', { class: 'muted small' }, `Une seule tentative par jour. Série : ${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''} (+20 or par jour consécutif, jusqu'à 7 ; 1 tirage gratuit toutes les ${DAILY_PULL_EVERY} victoires d'affilée). Une défaite remet la série à zéro et un tiers des tombés meurt.`),
+    h('p', { class: 'muted small' }, `Une seule tentative par jour. Série : ${st.dailyStreak} jour${st.dailyStreak > 1 ? 's' : ''} (+20 or par jour consécutif, jusqu'à 7 ; 1 tirage gratuit toutes les ${DAILY_PULL_EVERY} victoires d'affilée). Une défaite remet la série à zéro et coûte un soldat, à choisir parmi les tombés.`),
   );
 }
 
@@ -490,7 +488,7 @@ function survivalInfo(st: GameState): HTMLElement {
       '🔥',
       'Survie',
       h('p', null, `Enchaînez des vagues de plus en plus fortes, à partir de la puissance du niveau ${base}. Chaque vague gagnée remplit le pot (${fmt(survivalWaveGold(base))} or pour la première) ; un boss lâche une arme toutes les 5 vagues.`),
-      h('p', { class: 'note note-warn' }, `Pas de soin complet : chaque soldat ne récupère que ${Math.round(SURVIVAL_REST_HEAL * 100)} % de ses PV entre deux vagues. Une défaite ne laisse que la moitié du pot, et un tiers des tombés meurt.`),
+      h('p', { class: 'note note-warn' }, `Pas de soin complet : chaque soldat ne récupère que ${Math.round(SURVIVAL_REST_HEAL * 100)} % de ses PV entre deux vagues. Une défaite ne laisse que la moitié du pot et coûte un soldat, à choisir parmi les tombés.`),
       h('p', { class: 'note' }, '🎁 Après chaque vague gagnée, choisissez un bonus parmi trois pour toute l’expédition : dégâts, armure, soins, or en plus, voire un mercenaire.'),
       h('p', { class: 'muted small' }, `Record : vague ${st.bestWave}.`),
     );
@@ -601,7 +599,7 @@ function campaignInfo(st: GameState, level: number): HTMLElement {
       [
         h('div', { class: 'meters' }, progressBar(st.lootMeter / LOOT_METER_MAX, `🔫 Butin : ${st.lootMeter} / ${LOOT_METER_MAX} (une arme quand la jauge est pleine)`, 'progress-loot'), progressBar((total % STAR_CHEST_EVERY) / STAR_CHEST_EVERY, `⭐ Coffre d'étoiles (1 tirage) : ${total % STAR_CHEST_EVERY} / ${STAR_CHEST_EVERY}`)),
         h('div', { class: 'star-rules' }, h('span', null, stars(3, 3, 'stars-mini'), ' aucune perte'), h('span', null, stars(2, 3, 'stars-mini'), ' ≤ moitié tombée'), h('span', null, stars(1, 3, 'stars-mini'), ' victoire')),
-        h('p', { class: 'muted small' }, `Victoire : les soldats tombés sont rapatriés et gagnent leur XP. Défaite : ils n'en gagnent pas et un tiers meurt, sauf sur les ${SAFE_LEVELS} premiers niveaux.`),
+        h('p', { class: 'muted small' }, `Victoire : les soldats tombés sont rapatriés et gagnent leur XP. Défaite : ils n'en gagnent pas et vous en perdez un, à choisir, sauf sur les ${SAFE_LEVELS} premiers niveaux et les niveaux déjà conquis.`),
         prev.elites.map((a) => h('p', { class: 'muted small' }, h('b', null, `Élite ${a.name}`), ` : ${a.desc}`)),
       ],
     ),
@@ -724,7 +722,8 @@ export function renderCombat(): HTMLElement {
   const fee = mode === 'training' ? trainingFee(picked) : 0;
   const broke = st.gold < fee;
   const choosing = mode === 'survival' && !!st.survival?.choices;
-  const blocked = !!lockId || (mode === 'daily' && dailyDone(st)) || choosing;
+  const lossPending = !!st.pendingLoss;
+  const blocked = !!lockId || (mode === 'daily' && dailyDone(st)) || choosing || lossPending;
   const canLaunch = !blocked && !broke && (runActive ? runSquad.length > 0 : selected.size >= 1);
 
   const prep =
@@ -794,6 +793,7 @@ export function renderCombat(): HTMLElement {
     { class: 'btn btn-big btn-primary', disabled: !canLaunch, onclick: launch, title: canLaunch ? 'Lancer le combat' : undefined },
     canLaunch ? `⚔ ${label}`
     : mode === 'daily' && dailyDone(st) ? 'Revenez demain'
+    : lossPending ? 'Décidez d’abord du soldat perdu'
     : choosing ? 'Choisissez d’abord un bonus'
     : runActive ? "Plus aucun soldat dans l'expédition"
     : broke ? `Il manque ${fmt(fee - st.gold)} or`
@@ -806,6 +806,8 @@ export function renderCombat(): HTMLElement {
     'section',
     { class: 'combat' },
     tabs,
+    // Après un rechargement en plein bilan de défaite, le choix reste à faire ici
+    lossPicker(() => refresh()),
     h('div', { class: 'combat-cols' }, info, prep),
     picker,
     !lockId && h('div', { class: 'launch-bar' }, defeatNote(st, level, picked), est ? estimateLine(est) : h('span', { class: 'muted small' }, mode === 'simulation' ? 'Simulation : aucune perte réelle.' : mode === 'fodder' ? 'Aucun soldat engagé ne reviendra, ni son arme.' : 'Sélectionnez votre escouade pour voir vos chances.'), h('div', { class: 'launch-buttons' }, quickPick || launchBtn)),

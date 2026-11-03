@@ -4243,8 +4243,26 @@ input[type='checkbox'] {
 }
 
 .boon-picker h3,
-.result-picks h3 {
+.result-picks h3,
+.loss-picker h3 {
   font-size: 1rem;
+}
+
+.loss-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin: 0.6rem 0;
+  padding: 0.7rem;
+  text-align: left;
+  background: var(--bad-soft);
+  border: 1px solid color-mix(in srgb, var(--bad) 30%, transparent);
+  border-radius: 10px;
+}
+
+.loss-choice.picked {
+  border-color: var(--bad);
+  box-shadow: inset 0 0 0 1px var(--bad);
 }
 
 .boon-choices {

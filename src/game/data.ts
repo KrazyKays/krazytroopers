@@ -74,9 +74,6 @@ export const UNLOCKS: UnlockDef[] = [
 /** Renforts d'urgence : tirages offerts à un joueur sans soldat ni or, pour qu'une partie ne soit jamais bloquée. */
 export const RESCUE_PULLS = 2;
 
-/** Part des soldats tombés qui meurent vraiment lors d'une défaite (voir deathsAmong). */
-export const DEFEAT_DEATH_SHARE = 1 / 3;
-
 /** Dernier niveau de campagne où une défaite ne tue personne : le temps d'apprendre sans perdre son escouade. */
 export const SAFE_LEVELS = 5;
 

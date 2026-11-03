@@ -214,7 +214,8 @@ export function renameSoldier(st: GameState, id: string, name: string): boolean 
 
 export function releaseSoldier(st: GameState, id: string): number {
   const idx = st.soldiers.findIndex((s) => s.id === id);
-  if (idx < 0) return 0;
+  // Un soldat dont le sort reste à décider ne peut pas être renvoyé pour échapper au choix
+  if (idx < 0 || st.pendingLoss?.includes(id)) return 0;
   const value = RARITIES[st.soldiers[idx].rarity].releaseValue;
   st.soldiers.splice(idx, 1);
   st.gold += value;

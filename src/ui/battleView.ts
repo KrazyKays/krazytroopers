@@ -1,7 +1,7 @@
 import { ARENA_H, ARENA_W, DT, type BattleEvent, type BattleResult, type BattleUnit, type Frame } from '../game/battle';
 import { LOOT_METER_MAX, RARITIES, UPGRADE_KINDS, UPGRADES_BY_ID } from '../game/data';
 import { biomeFor } from '../game/biomes';
-import type { BattleReport } from '../game/combat';
+import { chooseLoss, type BattleReport } from '../game/combat';
 import { getState, mutate } from '../game/state';
 import { BOONS_BY_ID, pickBoon } from '../game/survival';
 import { ENEMY_LINES, TRAITS_BY_ID } from '../game/traits';
@@ -278,6 +278,8 @@ export function openBattle(title: string, units: BattleUnit[], result: BattleRes
         e.preventDefault();
         skip();
       }
+    } else if (getState().pendingLoss) {
+      // Le choix du soldat perdu ne se contourne pas au clavier : seul le panneau de résultat permet de le faire
     } else if (e.key === 'Escape') {
       close();
     } else if (e.key === 'Enter') {
@@ -465,7 +467,53 @@ export function boonPicker(onPick?: () => void): HTMLElement | false {
   return box;
 }
 
+/**
+ * Choix du soldat tombé qui ne reviendra pas. Rien n'est définitif avant la confirmation : la perte est irréversible,
+ * et un simple clic ne doit pas la décider. `report` met à jour le bilan du combat en cours, s'il est encore affiché.
+ */
+export function lossPicker(onChosen: () => void, report?: BattleReport): HTMLElement | false {
+  const pending = getState().pendingLoss;
+  if (!pending) return false;
+  const box = h('div', { class: 'loss-picker' });
+  const draw = (picked: string | null): void => {
+    const fallen = getState().soldiers.filter((s) => pending.includes(s.id));
+    const chosen = fallen.find((s) => s.id === picked);
+    box.replaceChildren(
+      h('h3', null, '☠️ Vous ne pouvez pas tous les ramener'),
+      h('p', { class: 'small' }, 'Choisissez le soldat qui ne reviendra pas. Il sera perdu définitivement ; son arme reste dans votre arsenal et les autres sont rapatriés, sans XP.'),
+      h(
+        'div',
+        { class: 'boon-choices' },
+        fallen.map((s) =>
+          h(
+            'button',
+            { class: `boon loss-choice${s.id === picked ? ' picked' : ''}`, onclick: () => draw(s.id) },
+            h('b', null, s.favorite ? `⭐ ${s.name}` : s.name),
+            h('small', null, `${RARITIES[s.rarity].label} · niv. ${s.level} · ${s.upgrades.length} amélioration${s.upgrades.length > 1 ? 's' : ''} · ${fmt(s.kills)} élim.`),
+          ),
+        ),
+      ),
+      h(
+        'button',
+        {
+          class: 'btn btn-danger',
+          disabled: !chosen,
+          onclick: () => {
+            if (!chosen) return;
+            mutate((st) => chooseLoss(st, chosen.id, report));
+            onChosen();
+          },
+        },
+        chosen ? `Laisser ${chosen.name} derrière` : 'Sélectionnez un soldat',
+      ),
+    );
+  };
+  draw(null);
+  return box;
+}
+
 function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAction): HTMLElement {
+  const choosing = !!report.lossChoice;
   const title = report.colossus ? (report.colossus.killed ? 'Colosse abattu !' : 'Sacrifice accompli') : report.won ? 'Victoire !' : report.timeout ? 'Temps écoulé — défaite' : 'Défaite';
   const survivors = new Set(report.soldiers.filter((s) => !s.died).map((s) => s.id));
   const picks = getState().soldiers.filter((s) => survivors.has(s.id) && s.picksLeft > 0).length;
@@ -489,6 +537,7 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
   const dead = report.soldiers.filter((s) => s.died).length;
   const brought = report.soldiers.filter((s) => s.wounded).length;
   const lossNote =
+    !choosing &&
     !report.won &&
     !report.colossus &&
     dead + brought > 0 &&
@@ -506,11 +555,13 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
     h('tr', null, h('th', null, 'Soldat'), h('th', null, 'Infligés'), h('th', null, 'Subis'), h('th', null, 'Soins reçus'), h('th', null, 'Soins donnés')),
     report.soldiers.map((s) => h('tr', { class: s.died ? 'died' : '' }, h('td', null, s.name), h('td', null, fmt(Math.round(s.dealt))), h('td', null, fmt(Math.round(s.taken))), h('td', null, fmt(Math.round(s.healed))), h('td', null, fmt(Math.round(s.healGiven))))),
   );
-  return h(
+  const panel = h(
     'div',
     { class: `result ${report.won || report.colossus ? 'won' : 'lost'}` },
     h('h2', null, title),
     lossNote,
+    // Le panneau se redessine une fois le choix fait : le bilan et les boutons n'ont de sens qu'à ce moment-là
+    choosing && lossPicker(() => panel.replaceWith(resultPanel(report, close, replay)), report),
     report.colossus && h('p', { class: report.colossus.killed ? 'levelup' : 'muted' }, `${fmt(report.colossus.dealt)} dégâts infligés. ${report.colossus.killed ? 'Un Colosse plus résistant prend sa place.' : `Il lui reste ${fmt(report.colossus.left)} / ${fmt(report.colossus.maxHp)} PV.`}`),
     report.stars && h('div', { class: 'result-stars' }, stars(report.stars.got, 3, 'stars-huge'), report.stars.gained > 0 ? h('small', null, `+${report.stars.gained} nouvelle${report.stars.gained > 1 ? 's' : ''} étoile${report.stars.gained > 1 ? 's' : ''}`) : report.stars.best > report.stars.got && h('small', { class: 'muted' }, `Record : ${report.stars.best} ★`)),
     report.firstClear && h('p', { class: 'levelup' }, `Niveau ${report.level} de la campagne terminé !`),
@@ -549,8 +600,9 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
         h('ul', null, report.unlocked.map((u) => h('li', null, h('b', null, u.label), ` : ${u.desc}`))),
       ),
     notable.length > 0 && h('ul', { class: 'result-list' }, notable.map(row)),
-    picks > 0 && pendingPicks(survivors),
-    resultActions(close, replay),
+    !choosing && picks > 0 && pendingPicks(survivors),
+    !choosing && resultActions(close, replay),
     fold('result-details', 'Détail du combat', [h('ul', { class: 'result-list' }, report.soldiers.map(row)), h('div', { class: 'table-scroll' }, details)]),
   );
+  return panel;
 }

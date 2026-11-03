@@ -28,7 +28,7 @@ interface TabDef {
 // Le QG oriente et le combat est l'action principale ; viennent ensuite ce qu'on y engage, puis ce qui l'alimente et l'aide
 const TABS: TabDef[] = [
   { id: 'home', label: 'QG', icon: '🏠', hint: 'Prochaine étape, objectifs et accès rapides', render: renderHome, badge: (st) => { const n = claimableGoals(st).length; return n ? { value: n, title: 'Objectifs à réclamer' } : null; } },
-  { id: 'combat', label: 'Combat', icon: '⚔️', hint: 'Campagne, défi du jour, survie, entraînement', render: renderCombat, badge: (st) => (isUnlocked(st, 'daily') && !dailyDone(st) ? { value: '!', title: 'Défi du jour disponible' } : null) },
+  { id: 'combat', label: 'Combat', icon: '⚔️', hint: 'Campagne, défi du jour, survie, entraînement', render: renderCombat, badge: (st) => (st.pendingLoss ? { value: '☠', title: 'Un choix vous attend après votre dernière défaite' } : isUnlocked(st, 'daily') && !dailyDone(st) ? { value: '!', title: 'Défi du jour disponible' } : null) },
   { id: 'roster', label: 'Soldats', icon: '🪖', hint: 'Vos soldats : améliorations et équipement', render: renderRoster, badge: (st) => { const n = st.soldiers.filter((s) => s.picksLeft > 0).length; return n ? { value: n, title: 'Soldats avec des améliorations à choisir' } : null; } },
   { id: 'arsenal', label: 'Armes', icon: '🔫', hint: 'Vos armes : équiper, vendre, forger', render: renderArsenal },
   { id: 'recruit', label: 'Tirages', icon: '🎲', hint: 'Tirer de nouveaux soldats et de nouvelles armes', render: renderRecruit, badge: (st) => (st.freePulls ? { value: st.freePulls, title: 'Tirages gratuits disponibles' } : null) },

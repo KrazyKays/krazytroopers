@@ -64,12 +64,16 @@ describe('liste des soldats', () => {
 
 describe('rapatriement des blessés', () => {
   it('annonce la mort définitive seulement là où une défaite peut tuer', () => {
-    expect(canDie({ mode: 'campaign', level: 5, squad: [] })).toBe(false);
-    expect(canDie({ mode: 'campaign', level: 6, squad: [] })).toBe(true);
-    expect(canDie({ mode: 'training', squad: [] })).toBe(false);
-    expect(canDie({ mode: 'tower', squad: [] })).toBe(false);
-    expect(canDie({ mode: 'daily', squad: [] })).toBe(true);
-    expect(canDie({ mode: 'survival', squad: [] })).toBe(true);
+    const st = createInitialState();
+    st.campaignLevel = 5;
+    expect(canDie(st, { mode: 'campaign', level: 5, squad: [] })).toBe(false);
+    expect(canDie(st, { mode: 'campaign', level: 6, squad: [] })).toBe(true);
+    st.campaignLevel = 6;
+    expect(canDie(st, { mode: 'campaign', level: 6, squad: [] })).toBe(false);
+    expect(canDie(st, { mode: 'training', squad: [] })).toBe(false);
+    expect(canDie(st, { mode: 'tower', squad: [] })).toBe(false);
+    expect(canDie(st, { mode: 'daily', squad: [] })).toBe(true);
+    expect(canDie(st, { mode: 'survival', squad: [] })).toBe(true);
   });
 
   it('garde dans l’escouade les soldats tombés lors d’une victoire, avec la même XP que les autres', () => {

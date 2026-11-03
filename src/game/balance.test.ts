@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { deathsAmong, estimateBattle, launchBattle } from './combat';
+import { chooseLoss, deathsAmong, estimateBattle, launchBattle } from './combat';
 import { PULL_COST, RESCUE_PULLS, SAFE_LEVELS, START_LOOT, LOOT_FIRST_CLEAR, LOOT_METER_MAX, WEAPONS_BY_ID } from './data';
 import { buildCampaignEnemies, threatBudget } from './enemies';
 import { PROFILES, playThrough } from './playtest';
 import { mulberry32 } from './rng';
-import { createSoldier } from './roster';
-import { createInitialState } from './state';
+import { createSoldier, releaseSoldier } from './roster';
+import { createInitialState, parseSave } from './state';
 import { computeStats, levelMult, powerScore, xpForNext } from './stats';
 import type { GameState } from './types';
 
@@ -26,17 +26,66 @@ function squadState(count: number, level: number, weapon: string): GameState {
 const ids = (st: GameState) => st.soldiers.map((s) => s.id);
 
 describe('conséquences d’une défaite', () => {
-  it('ne coûte qu’un tiers des soldats tombés, arrondi au supérieur', () => {
-    expect([1, 2, 3, 4, 6].map(deathsAmong)).toEqual([1, 1, 1, 2, 2]);
-    const st = squadState(6, 1, 'fists');
-    st.campaignLevel = 20;
+  it('ne coûte qu’un soldat, celui que choisit le joueur', () => {
+    expect([0, 1, 2, 4, 6].map(deathsAmong)).toEqual([0, 1, 1, 1, 1]);
+    const st = squadState(5, 1, 'fists');
+    st.campaignLevel = 19;
     const r = launchBattle(st, { mode: 'campaign', squad: ids(st), level: 20 }, 5);
     if (!r.ok) throw new Error(r.error);
     expect(r.report.won).toBe(false);
-    expect(r.report.soldiers.filter((s) => s.died)).toHaveLength(2);
+    expect(r.report.lossChoice).toBe(true);
+    expect(st.pendingLoss).toEqual(ids(st));
+    expect(st.soldiers).toHaveLength(5);
+
+    const lost = st.soldiers[3].id;
+    expect(chooseLoss(st, 'inconnu', r.report)).toBe(false);
+    expect(chooseLoss(st, lost, r.report)).toBe(true);
+    expect(st.pendingLoss).toBeNull();
+    expect(r.report.lossChoice).toBe(false);
+    expect(r.report.soldiers.filter((s) => s.died).map((s) => s.id)).toEqual([lost]);
     expect(r.report.soldiers.filter((s) => s.wounded)).toHaveLength(4);
+    expect(st.soldiers.map((s) => s.id)).not.toContain(lost);
     expect(st.soldiers).toHaveLength(4);
-    expect(st.stats.deaths).toBe(2);
+    expect(st.stats.deaths).toBe(1);
+    expect(chooseLoss(st, st.soldiers[0].id)).toBe(false);
+  });
+
+  it('bloque combats et renvois tant que le choix n’est pas fait, y compris après un rechargement', () => {
+    const st = squadState(3, 1, 'fists');
+    st.campaignLevel = 19;
+    expect(launchBattle(st, { mode: 'campaign', squad: ids(st), level: 20 }, 5).ok).toBe(true);
+    const fallen = st.pendingLoss!;
+    expect(fallen).toHaveLength(3);
+
+    const loaded = parseSave(JSON.stringify(st))!;
+    expect(loaded.pendingLoss).toEqual(fallen);
+    expect(launchBattle(loaded, { mode: 'training', squad: ids(loaded) }, 1).ok).toBe(false);
+    expect(releaseSoldier(loaded, fallen[0])).toBe(0);
+    expect(loaded.soldiers).toHaveLength(3);
+    expect(chooseLoss(loaded, fallen[0])).toBe(true);
+    expect(launchBattle(loaded, { mode: 'training', squad: ids(loaded) }, 1).ok).toBe(true);
+  });
+
+  it('tue d’office le seul soldat tombé, sans choix à faire', () => {
+    const st = squadState(1, 1, 'fists');
+    st.campaignLevel = 19;
+    const r = launchBattle(st, { mode: 'campaign', squad: ids(st), level: 20 }, 5);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.report.lossChoice).toBeUndefined();
+    expect(st.pendingLoss).toBeNull();
+    expect(r.report.soldiers[0].died).toBe(true);
+    expect(st.stats.deaths).toBe(1);
+  });
+
+  it('épargne tout le monde sur un niveau déjà conquis, mais pas sur un nouveau', () => {
+    const replay = squadState(3, 1, 'fists');
+    replay.campaignLevel = 20;
+    const r = launchBattle(replay, { mode: 'campaign', squad: ids(replay), level: 20 }, 5);
+    if (!r.ok) throw new Error(r.error);
+    expect(r.report.won).toBe(false);
+    expect(replay.pendingLoss).toBeNull();
+    expect(replay.soldiers).toHaveLength(3);
+    expect(r.report.soldiers.every((s) => s.wounded && !s.died)).toBe(true);
   });
 
   it('épargne tout le monde sur les premiers niveaux de campagne', () => {

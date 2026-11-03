@@ -1,5 +1,5 @@
 import { DT, simulate, type BattleResult, type BattleUnit } from './battle';
-import { BOSS_FREE_PULLS, COLOSSUS_PULLS, DAILY_PULL_EVERY, DEFEAT_DEATH_SHARE, LOOT_FIRST_CLEAR, PITY_LIMIT, RARITY_ORDER, LOOT_METER_MAX, LOOT_REPLAY, MAX_LEVEL, PULL_COST, RESCUE_PULLS, SAFE_LEVELS, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, type UnlockDef } from './data';
+import { BOSS_FREE_PULLS, COLOSSUS_PULLS, DAILY_PULL_EVERY, LOOT_FIRST_CLEAR, PITY_LIMIT, RARITY_ORDER, LOOT_METER_MAX, LOOT_REPLAY, MAX_LEVEL, PULL_COST, RESCUE_PULLS, SAFE_LEVELS, STAR_CHEST_EVERY, SURVIVAL_REST_HEAL, type UnlockDef } from './data';
 import { grantLevelPicks } from './upgrades';
 import { activePosition, activeTactic, applySquadBonuses, synergyStatus } from './squad';
 import {
@@ -28,7 +28,7 @@ import { rollWeaponDrop, trainingCost, weaponOfRarity } from './roster';
 import { soldierMods, addXp, computeStats, weaponForSoldier } from './stats';
 import { applyBoons, GREED_BONUS, boonCount, mercUnit, newRun, rollBoons } from './survival';
 import { newWeaponItem, resolveWeapon } from './weapons';
-import { mulberry32, randomSeed, shuffle, type Rng } from './rng';
+import { mulberry32, randomSeed, type Rng } from './rng';
 import type { GameState, Soldier, WeaponDef } from './types';
 
 export type BattleMode = 'training' | 'campaign' | 'daily' | 'survival' | 'fodder' | 'tower';
@@ -115,6 +115,8 @@ export interface BattleReport {
   stars?: { got: number; best: number; gained: number; gold: number; chests: number };
   /** Campagne gagnée : remplissage de la jauge de butin (une arme tombe quand elle est pleine). */
   loot?: { gained: number; meter: number };
+  /** Défaite avec plusieurs soldats tombés : le joueur doit encore désigner celui qui ne reviendra pas (voir chooseLoss). */
+  lossChoice?: boolean;
 }
 
 /** Part de l'XP d'un niveau regagnée en le rejouant. */
@@ -305,26 +307,40 @@ function setupBattle(st: GameState, req: BattleRequest): Setup | string {
 export function estimateBattle(st: GameState, req: BattleRequest, runs = ESTIMATE_RUNS, seed: number = randomSeed()): EstimateLaunch {
   const setup = setupBattle(st, req);
   if (typeof setup === 'string') return { ok: false, error: setup };
-  return { ok: true, ...estimateRuns(setup.allies, setup.enemies, runs, seed, canDie(req) ? 'onLoss' : 'never') };
+  return { ok: true, ...estimateRuns(setup.allies, setup.enemies, runs, seed, canDie(st, req) ? 'onLoss' : 'never') };
 }
 
 /**
- * Soldats perdus lors d'une défaite : un tiers des tombés, arrondi au supérieur. Une défaite signifiant que toute
- * l'escouade est tombée, tuer tout le monde ferait repartir le joueur de zéro, sans issue.
+ * Soldats perdus lors d'une défaite : un seul, quelle que soit la taille de l'escouade. Une perte qui grandirait
+ * avec l'escouade punirait le joueur d'engager les places qu'il vient de débloquer.
  */
 export function deathsAmong(fallen: number): number {
-  return Math.ceil(fallen * DEFEAT_DEATH_SHARE);
+  return Math.min(1, fallen);
 }
 
-function pickCasualties(fallen: readonly string[], seed: number): Set<string> {
-  return new Set(shuffle(mulberry32(seed ^ 0x5bd1e995), [...fallen]).slice(0, deathsAmong(fallen.length)));
-}
-
-/** Une défaite peut-elle tuer les soldats tombés dans ce combat ? */
-export function canDie(req: BattleRequest): boolean {
-  if (req.mode === 'campaign') return req.level > SAFE_LEVELS;
+/** Une défaite peut-elle coûter un soldat dans ce combat ? */
+export function canDie(st: GameState, req: BattleRequest): boolean {
+  // Rejouer un niveau conquis sert à se renforcer : ce rattrapage ne doit pas pouvoir creuser le retard
+  if (req.mode === 'campaign') return req.level > SAFE_LEVELS && req.level > st.campaignLevel;
   // La Tour est un défi de puissance : on y retente sa chance sans perdre personne
   return req.mode !== 'training' && req.mode !== 'tower';
+}
+
+/** Désigne le soldat tombé qui ne reviendra pas ; les autres sont rapatriés. Renvoie faux si ce choix n'est pas possible. */
+export function chooseLoss(st: GameState, soldierId: string, report?: BattleReport): boolean {
+  if (!st.pendingLoss?.includes(soldierId)) return false;
+  st.pendingLoss = null;
+  st.soldiers = st.soldiers.filter((s) => s.id !== soldierId);
+  st.stats.deaths++;
+  if (report) {
+    report.lossChoice = false;
+    const lost = report.soldiers.find((s) => s.id === soldierId);
+    if (lost) {
+      lost.died = true;
+      lost.wounded = false;
+    }
+  }
+  return true;
 }
 
 /** Quand les soldats tombés meurent vraiment : toujours (simulation, pour mesurer), sur défaite, ou jamais (entraînement). */
@@ -332,6 +348,7 @@ type Lethality = 'always' | 'onLoss' | 'never';
 
 function estimateRuns(allies: BattleUnit[], enemies: (rng: Rng) => BattleUnit[], runs: number, seed: number, lethal: Lethality): SimulationEstimate {
   const out: SimulationEstimate = { runs, wins: 0, losses: 0, timeouts: 0, avgDuration: 0, avgDeaths: 0 };
+  const soldierIds = new Set(allies.filter((u) => u.soldierId).map((u) => u.id));
   for (let r = 0; r < runs; r++) {
     const s = (seed + r * 0x6d2b79f5) >>> 0;
     const result = simulate([...allies, ...enemies(mulberry32(s ^ 0x9e3779b9))], s);
@@ -339,10 +356,12 @@ function estimateRuns(allies: BattleUnit[], enemies: (rng: Rng) => BattleUnit[],
     else if (result.winner === 'enemy') out.losses++;
     else out.timeouts++;
     out.avgDuration += (result.ticks * DT) / runs;
-    if (lethal === 'always' || (lethal === 'onLoss' && result.winner !== 'ally')) out.avgDeaths += (lethal === 'always' ? result.deadIds.length : deathsAmong(result.deadIds.length)) / runs;
+    if (lethal === 'always' || (lethal === 'onLoss' && result.winner !== 'ally')) out.avgDeaths += (lethal === 'always' ? result.deadIds.length : deathsAmong(result.deadIds.filter((id) => soldierIds.has(id)).length)) / runs;
   }
   return out;
 }
+
+const PENDING_LOSS_ERROR = 'Choisissez d’abord le soldat qui ne reviendra pas de la dernière défaite.';
 
 /** Hier, au format de `dailyKey`. */
 function previousDay(key: string): string {
@@ -355,6 +374,7 @@ export function dailyDone(st: GameState, key: string = dailyKey()): boolean {
 }
 
 export function launchBattle(st: GameState, req: BattleRequest, seed: number = randomSeed()): BattleLaunch {
+  if (st.pendingLoss) return { ok: false, error: PENDING_LOSS_ERROR };
   const dayKey = req.mode === 'daily' ? (req.date ?? dailyKey()) : '';
   if (req.mode === 'daily' && dailyDone(st, dayKey)) return { ok: false, error: 'Défi du jour déjà tenté : revenez demain !' };
   const setup = setupBattle(st, req);
@@ -368,8 +388,8 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   const units = [...allies, ...enemies];
   const result = simulate(units, seed);
   const won = result.winner === 'ally';
-  // Une victoire permet de rapatrier les blessés ; ni l'entraînement ni les premiers niveaux ne sont mortels
-  const lethal = !won && canDie(req);
+  // Une victoire permet de rapatrier les blessés ; ni l'entraînement, ni les premiers niveaux, ni un niveau rejoué ne sont mortels
+  const lethal = !won && canDie(st, req);
 
   const firstClear = req.mode === 'campaign' && won && req.level === st.campaignLevel + 1;
   const avgLevel = squad.reduce((sum, s) => sum + s.level, 0) / squad.length;
@@ -381,7 +401,9 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
     : campaignXp(req.level) * (firstClear ? 1 : REPLAY_XP);
   const xp = won ? baseXp : baseXp * (req.mode === 'training' ? 0.5 : 0.4);
 
-  const casualties = lethal ? pickCasualties(result.deadIds, seed) : new Set<string>();
+  // Les mercenaires tombés ne comptent pas : seul un soldat du joueur peut être perdu. S'ils sont plusieurs, le joueur choisit.
+  const fallenSoldiers = lethal ? squad.filter((s) => result.deadIds.includes(s.id)).map((s) => s.id) : [];
+  const casualties = new Set(fallenSoldiers.length === 1 ? fallenSoldiers : []);
   const soldiers: SoldierReport[] = squad.map((s) => {
     const fell = result.deadIds.includes(s.id);
     const died = casualties.has(s.id);
@@ -400,6 +422,10 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   st.soldiers = st.soldiers.filter((s) => !casualties.has(s.id));
 
   const report: BattleReport = { mode: req.mode, level, won, timeout: result.winner === 'timeout', firstClear, gold: 0, weapon: null, soldiers, freePulls: 0, unlocked: [] };
+  if (fallenSoldiers.length > 1) {
+    st.pendingLoss = fallenSoldiers;
+    report.lossChoice = true;
+  }
   const grantWeapon = (w: WeaponDef) => {
     const item = newWeaponItem(st, w);
     st.weapons.push(item);
@@ -495,6 +521,7 @@ export function canSacrifice(st: GameState, s: Soldier): boolean {
  * tuerait le Colosse sans risque, et ses récompenses deviendraient gratuites.
  */
 export function launchFodder(st: GameState, squadIds: string[], seed: number = randomSeed()): BattleLaunch {
+  if (st.pendingLoss) return { ok: false, error: PENDING_LOSS_ERROR };
   if (!isUnlocked(st, 'fodder')) return { ok: false, error: `Ce mode se débloque au niveau ${unlockLevel('fodder')} de la campagne.` };
   const squad = resolveSquad(st, squadIds);
   if (typeof squad === 'string') return { ok: false, error: squad };

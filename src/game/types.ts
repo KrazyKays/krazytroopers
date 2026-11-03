@@ -88,6 +88,8 @@ export interface GameState {
   lootMeter: number;
   /** Tour sans fin : dernier étage franchi. */
   towerFloor: number;
+  /** Soldats tombés lors d'une défaite, parmi lesquels le joueur doit désigner celui qui ne reviendra pas. */
+  pendingLoss: string[] | null;
 }
 
 export interface SurvivalRun {

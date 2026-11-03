@@ -31,6 +31,7 @@ export function createInitialState(): GameState {
     claimedGoals: [],
     lootMeter: START_LOOT,
     towerFloor: 0,
+    pendingLoss: null,
   };
   for (const defId of START_WEAPONS) st.weapons.push({ uid: `w${st.nextId++}`, defId });
   return st;
@@ -80,6 +81,7 @@ export function parseSave(raw: string): GameState | null {
           claimedGoals: Array.isArray(data.claimedGoals) ? data.claimedGoals : [],
           lootMeter: typeof data.lootMeter === 'number' ? data.lootMeter : START_LOOT,
           towerFloor: typeof data.towerFloor === 'number' ? data.towerFloor : 0,
+          pendingLoss: Array.isArray(data.pendingLoss) && data.pendingLoss.length > 0 ? data.pendingLoss : null,
           survival: data.survival ? { ...data.survival, boons: data.survival.boons ?? [], choices: data.survival.choices ?? null, mercs: data.survival.mercs ?? [] } : null,
           // Sauvegardes antérieures au compteur global : on reprend les éliminations encore connues des soldats.
           stats: {
