@@ -477,7 +477,7 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
       s.died
         ? report.colossus ? ' a été sacrifié : il quitte l’escouade.' : ' est mort au combat : il quitte l’escouade.'
         : s.wounded
-          ? report.mode === 'training' ? ' a été mis K.O. : il s’en remettra (pas d’XP).' : ' est tombé mais a été rapatrié grâce à la victoire (pas d’XP).'
+          ? report.mode === 'training' ? ' a été mis K.O. : il s’en remettra (pas d’XP).' : report.won ? ' est tombé mais a été rapatrié grâce à la victoire (pas d’XP).' : ' est tombé mais a été rapatrié (pas d’XP).'
           : ` +${fmt(s.xpGained)} XP`,
       s.levelsGained > 0 && h('span', { class: 'levelup' }, ` Niveau ${s.newLevel} !`),
       s.kills > 0 && h('span', { class: 'muted' }, ` (${s.kills} élimination${s.kills > 1 ? 's' : ''})`),
