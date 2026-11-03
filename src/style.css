@@ -2325,12 +2325,14 @@ input[type='checkbox'] {
 }
 
 .rename-form {
+  flex: 1 1 100%;
   display: flex;
+  flex-wrap: wrap;
   gap: 0.4rem;
 }
 
 .rename-input {
-  flex: 1;
+  flex: 1 1 10rem;
   min-width: 0;
   font-size: 1.1rem;
   font-weight: 700;
@@ -3825,6 +3827,32 @@ input[type='checkbox'] {
 
 .detail-name {
   margin: 0;
+}
+
+.detail-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.rename-toggle {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 1.8rem;
+  height: 1.8rem;
+  padding: 0;
+  font-size: 0.95rem;
+  line-height: 1;
+  background: none;
+  border: 0;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.rename-toggle:hover {
+  background: var(--surface-3);
 }
 
 .detail-title {

@@ -164,20 +164,34 @@ function statRow(label: string, value: string): HTMLElement {
   return h('div', { class: 'stat-row' }, h('span', null, label), h('b', null, value));
 }
 
-function renameForm(s: Soldier): HTMLElement {
-  const input = h('input', { class: 'rename-input', type: 'text', value: s.name, maxlength: NAME_MAX_LENGTH });
-  return h(
+function renameForm(s: Soldier, onDone: () => void): HTMLElement {
+  const input = h('input', { class: 'rename-input', type: 'text', value: s.name, maxlength: NAME_MAX_LENGTH, 'aria-label': 'Nom du soldat' });
+  const cancel = () => {
+    onDone();
+    refresh();
+  };
+  const form = h(
     'form',
     {
       class: 'rename-form',
       onsubmit: (e) => {
         e.preventDefault();
+        onDone();
         if (!mutate((st) => renameSoldier(st, s.id, input.value))) toast('Le nom ne peut pas être vide.', 'bad');
       },
     },
     input,
-    h('button', { class: 'btn btn-small', type: 'submit' }, 'Renommer'),
+    h('button', { class: 'btn btn-small btn-primary', type: 'submit' }, 'Renommer'),
+    h('button', { class: 'btn btn-small', type: 'button', onclick: cancel }, 'Annuler'),
   );
+  // Échap annule la saisie sans fermer la fiche
+  form.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.stopPropagation();
+    cancel();
+  });
+  queueMicrotask(() => input.select());
+  return form;
 }
 
 function legionBlock(s: Soldier, removed: Set<string>): HTMLElement {
@@ -245,6 +259,7 @@ function legionBlock(s: Soldier, removed: Set<string>): HTMLElement {
 export function openSoldier(id: string): void {
   const legionRemoved = new Set<string>();
   let current = id;
+  let renaming = false;
   openModal((close) => {
     const st = getState();
     const s = st.soldiers.find((x) => x.id === current);
@@ -266,12 +281,21 @@ export function openSoldier(id: string): void {
         h(
           'div',
           { class: 'detail-title' },
-          h('h2', { class: 'detail-name' }, s.name),
-          h(
-            'button',
-            { class: `btn btn-small${s.favorite ? ' btn-gold' : ''}`, onclick: () => mutate((state) => toggleFavorite(state, s.id)) },
-            s.favorite ? '★ Favori' : '☆ Ajouter aux favoris',
-          ),
+          renaming
+            ? renameForm(s, () => { renaming = false; })
+            : [
+                h(
+                  'div',
+                  { class: 'detail-name-row' },
+                  h('h2', { class: 'detail-name' }, s.name),
+                  h('button', { class: 'rename-toggle', title: 'Renommer', 'aria-label': `Renommer ${s.name}`, onclick: () => { renaming = true; refresh(); } }, '✏️'),
+                ),
+                h(
+                  'button',
+                  { class: `btn btn-small${s.favorite ? ' btn-gold' : ''}`, onclick: () => mutate((state) => toggleFavorite(state, s.id)) },
+                  s.favorite ? '★ Favori' : '☆ Ajouter aux favoris',
+                ),
+              ],
         ),
         h('div', null, rarityTag(s.rarity), ` · Niveau ${s.level}${s.level >= MAX_LEVEL ? ' (max)' : ''}`, titleTags(s)),
         h('div', { class: 'detail-trait' }, traitTag(s), TRAITS_BY_ID[s.trait] && h('small', { class: 'muted' }, ` ${TRAITS_BY_ID[s.trait].desc}`)),
@@ -289,21 +313,18 @@ export function openSoldier(id: string): void {
     const statsMore = fold(
       'soldier-stats',
       'Statistiques détaillées',
-      [
-        h(
-          'div',
-          { class: 'stats-grid' },
-          statRow('Dégâts / coup', fmt(stats.damage, 1)),
-          statRow('Portée', fmt(stats.range)),
-          statRow('Vitesse', fmt(stats.speed)),
-          statRow('Armure', fmt(stats.armor)),
-          statRow('Critique', `${fmt(stats.crit * 100)} %`),
-          statRow('Esquive', `${fmt(stats.dodge * 100)} %`),
-          statRow('Éliminations', fmt(s.kills)),
-          statRow('Entraînements gratuits', s.trainingsLeft > 0 ? String(s.trainingsLeft) : s.level < MAX_LEVEL ? `0 (ensuite ${fmt(trainingCost(s))} or)` : '0'),
-        ),
-        renameForm(s),
-      ],
+      h(
+        'div',
+        { class: 'stats-grid' },
+        statRow('Dégâts / coup', fmt(stats.damage, 1)),
+        statRow('Portée', fmt(stats.range)),
+        statRow('Vitesse', fmt(stats.speed)),
+        statRow('Armure', fmt(stats.armor)),
+        statRow('Critique', `${fmt(stats.crit * 100)} %`),
+        statRow('Esquive', `${fmt(stats.dodge * 100)} %`),
+        statRow('Éliminations', fmt(s.kills)),
+        statRow('Entraînements gratuits', s.trainingsLeft > 0 ? String(s.trainingsLeft) : s.level < MAX_LEVEL ? `0 (ensuite ${fmt(trainingCost(s))} or)` : '0'),
+      ),
     );
 
     const upgrades = upgradeBlock(st, s, weapon);
@@ -360,7 +381,7 @@ export function openSoldier(id: string): void {
         'div',
         { class: 'next-pending' },
         h('span', null, `${s.name} est à jour. ${nextPending.name} a ${nextPending.picksLeft} amélioration${nextPending.picksLeft > 1 ? 's' : ''} à choisir.`),
-        h('button', { class: 'btn btn-small btn-gold', onclick: () => { current = nextPending.id; legionRemoved.clear(); refresh(); } }, 'Soldat suivant →'),
+        h('button', { class: 'btn btn-small btn-gold', onclick: () => { current = nextPending.id; renaming = false; legionRemoved.clear(); refresh(); } }, 'Soldat suivant →'),
       );
 
     return h(
