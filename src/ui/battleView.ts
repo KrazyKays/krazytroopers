@@ -469,6 +469,7 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
   const title = report.colossus ? (report.colossus.killed ? 'Colosse abattu !' : 'Sacrifice accompli') : report.won ? 'Victoire !' : report.timeout ? 'Temps écoulé — défaite' : 'Défaite';
   const survivors = new Set(report.soldiers.filter((s) => !s.died).map((s) => s.id));
   const picks = getState().soldiers.filter((s) => survivors.has(s.id) && s.picksLeft > 0).length;
+  const totalTaken = report.soldiers.reduce((sum, s) => sum + s.taken, 0);
   const row = (s: BattleReport['soldiers'][number]) =>
     h(
       'li',
@@ -477,13 +478,15 @@ function resultPanel(report: BattleReport, close: () => void, replay?: ReplayAct
       s.died
         ? report.colossus ? ' a été sacrifié : il quitte l’escouade.' : ' est mort au combat : il quitte l’escouade.'
         : s.wounded
-          ? report.mode === 'training' ? ' a été mis K.O. : il s’en remettra (pas d’XP).' : report.won ? ' est tombé mais a été rapatrié grâce à la victoire (pas d’XP).' : ' est tombé mais a été rapatrié (pas d’XP).'
+          ? report.won
+            ? `${report.mode === 'training' ? ' a été mis K.O.' : ' est tombé pour l’escouade'} après avoir encaissé ${Math.round((s.taken / Math.max(1, totalTaken)) * 100)} % des dégâts : +${fmt(s.xpGained)} XP`
+            : report.mode === 'training' ? ' a été mis K.O. : il s’en remettra (pas d’XP).' : ' est tombé mais a été rapatrié (pas d’XP).'
           : ` +${fmt(s.xpGained)} XP`,
       s.levelsGained > 0 && h('span', { class: 'levelup' }, ` Niveau ${s.newLevel} !`),
       s.kills > 0 && h('span', { class: 'muted' }, ` (${s.kills} élimination${s.kills > 1 ? 's' : ''})`),
     );
-  // Une mort ou un nouveau niveau se voient tout de suite ; le détail de chaque soldat reste à la demande
-  const notable = report.soldiers.filter((s) => s.died || s.levelsGained > 0);
+  // Une mort, un nouveau niveau ou un soldat tombé pour une victoire se voient tout de suite ; le détail de chaque soldat reste à la demande
+  const notable = report.soldiers.filter((s) => s.died || s.levelsGained > 0 || (report.won && s.wounded));
   const details = h(
     'table',
     { class: 'stats-table' },

@@ -553,8 +553,8 @@ function trainingInfo(st: GameState): HTMLElement {
     '🎯',
     "Combat d'entraînement",
     h('p', null, "Des cibles adaptées au niveau de votre escouade pour gagner de l'expérience, sans aucun risque."),
-    rewards(`✨ ~${fmt(trainingXp(avg))} XP par soldat debout`, `🪙 ${fmt(trainingGold(avg))} or si victoire`),
-    h('p', { class: 'muted small' }, `Un soldat K.O. s'en remet mais ne gagne pas d'XP. Chaque soldat a ${TRAINING_PER_SOLDIER} entraînements gratuits ; ensuite, son entraînement se paie au lancement selon son niveau.`),
+    rewards(`✨ ~${fmt(trainingXp(avg))} XP par soldat`, `🪙 ${fmt(trainingGold(avg))} or si victoire`),
+    h('p', { class: 'muted small' }, `Un soldat K.O. s'en remet, et ne perd son XP qu'en cas de défaite. Chaque soldat a ${TRAINING_PER_SOLDIER} entraînements gratuits ; ensuite, son entraînement se paie au lancement selon son niveau.`),
   );
 }
 
@@ -584,7 +584,7 @@ function campaignInfo(st: GameState, level: number): HTMLElement {
       [
         h('div', { class: 'meters' }, progressBar(st.lootMeter / LOOT_METER_MAX, `🔫 Butin : ${st.lootMeter} / ${LOOT_METER_MAX} (une arme quand la jauge est pleine)`, 'progress-loot'), progressBar((total % STAR_CHEST_EVERY) / STAR_CHEST_EVERY, `⭐ Coffre d'étoiles (1 tirage) : ${total % STAR_CHEST_EVERY} / ${STAR_CHEST_EVERY}`)),
         h('div', { class: 'star-rules' }, h('span', null, stars(3, 3, 'stars-mini'), ' aucune perte'), h('span', null, stars(2, 3, 'stars-mini'), ' ≤ moitié tombée'), h('span', null, stars(1, 3, 'stars-mini'), ' victoire')),
-        h('p', { class: 'muted small' }, `Victoire : les soldats tombés sont rapatriés, sans XP. Défaite : un tiers des tombés meurt, sauf sur les ${SAFE_LEVELS} premiers niveaux.`),
+        h('p', { class: 'muted small' }, `Victoire : les soldats tombés sont rapatriés et gagnent leur XP. Défaite : ils n'en gagnent pas et un tiers meurt, sauf sur les ${SAFE_LEVELS} premiers niveaux.`),
         prev.elites.map((a) => h('p', { class: 'muted small' }, h('b', null, `Élite ${a.name}`), ` : ${a.desc}`)),
       ],
     ),

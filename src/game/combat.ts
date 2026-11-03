@@ -50,7 +50,7 @@ export interface SoldierReport {
   levelsGained: number;
   newLevel: number;
   died: boolean;
-  /** Tombé au combat mais rapatrié : il survit, sans XP. */
+  /** Tombé au combat mais rapatrié : il survit, avec son XP si l'escouade a gagné. */
   wounded: boolean;
   kills: number;
   dealt: number;
@@ -385,7 +385,8 @@ export function launchBattle(st: GameState, req: BattleRequest, seed: number = r
   const soldiers: SoldierReport[] = squad.map((s) => {
     const fell = result.deadIds.includes(s.id);
     const died = casualties.has(s.id);
-    const gained = fell ? 0 : Math.round(xp * (1 + soldierMods(s).xpPct));
+    // Une victoire profite à toute l'escouade : un tank tombe parce qu'il protège les autres, et les étoiles sanctionnent déjà les pertes
+    const gained = fell && !won ? 0 : Math.round(xp * (1 + soldierMods(s).xpPct));
     const levelsGained = addXp(s, gained);
     grantLevelPicks(s);
     const kills = result.kills[s.id] ?? 0;

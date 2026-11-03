@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { simulate, type BattleUnit } from './battle';
-import { cashOutSurvival, dailyGold, estimateBattle, launchBattle, launchFodder } from './combat';
+import { campaignXp, cashOutSurvival, dailyGold, estimateBattle, launchBattle, launchFodder } from './combat';
 import { BOSS_FREE_PULLS, COLOSSUS_PULLS, DAILY_PULL_EVERY, FORGE_FEE, PITY_LIMIT, MAX_LEVEL, SQUAD_BASE, TRAINING_PER_SOLDIER, UNLOCKS, WEAPONS_BY_ID } from './data';
 import { buildDailyEnemies, buildScarecrow, colossusMaxHp, dailyKey } from './enemies';
 import { squadMax, unlockLevel, unlocksBetween } from './progress';
@@ -31,7 +31,7 @@ function squadState(n: number, level: number, weapon = 'rifle'): GameState {
 const ids = (st: GameState) => st.soldiers.map((s) => s.id);
 
 describe('rapatriement des blessés', () => {
-  it('garde dans l’escouade les soldats tombés lors d’une victoire, sans XP', () => {
+  it('garde dans l’escouade les soldats tombés lors d’une victoire, avec la même XP que les autres', () => {
     let found = false;
     for (let seed = 1; seed < 200 && !found; seed++) {
       const st = squadState(4, 9);
@@ -40,11 +40,23 @@ describe('rapatriement des blessés', () => {
       if (!r.ok || !r.report.won || r.result.deadIds.length === 0) continue;
       found = true;
       const fallen = r.report.soldiers.filter((s) => r.result.deadIds.includes(s.id));
-      expect(fallen.every((s) => s.wounded && !s.died && s.xpGained === 0)).toBe(true);
+      const expected = Math.round(campaignXp(8));
+      expect(fallen.every((s) => s.wounded && !s.died && s.xpGained === expected)).toBe(true);
       expect(st.soldiers).toHaveLength(4);
       expect(st.stats.deaths).toBe(0);
     }
     expect(found).toBe(true);
+  });
+
+  it('ne donne pas d’XP aux soldats tombés lors d’une défaite', () => {
+    const st = squadState(4, 1, 'fists');
+    st.campaignLevel = 9;
+    const r = launchBattle(st, { mode: 'campaign', squad: ids(st), level: 10 }, 1);
+    expect(r.ok && !r.report.won).toBe(true);
+    if (!r.ok) return;
+    const fallen = r.report.soldiers.filter((s) => r.result.deadIds.includes(s.id));
+    expect(fallen.length).toBeGreaterThan(0);
+    expect(fallen.every((s) => s.xpGained === 0)).toBe(true);
   });
 
   it('ne tue jamais à l’entraînement', () => {

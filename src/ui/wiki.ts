@@ -135,7 +135,7 @@ function sections(st: GameState): Section[] {
           title: 'Un soldat tombé au combat est-il perdu ?',
           body: [
             list(
-              [b('Victoire : '), 'il est rapatrié, sans XP.'],
+              [b('Victoire : '), 'il est rapatrié et gagne la même XP que les autres : il est souvent tombé pour les protéger.'],
               [b('Défaite ou temps écoulé : '), `un tiers des soldats tombés meurt définitivement (arrondi au supérieur), les autres sont rapatriés sans XP. C’est valable en campagne, au défi du jour et en survie. Les ${SAFE_LEVELS} premiers niveaux de campagne ne tuent personne.`],
               [b('Entraînement et simulation : '), 'il ne risque rien.'],
               [b('Chair à canon : '), 'tout soldat engagé est perdu, même en cas de victoire.'],
@@ -255,8 +255,8 @@ function sections(st: GameState): Section[] {
           title: 'Expérience',
           body: [
             list(
-              'Un soldat tombé ne gagne pas d’XP, même en cas de victoire.',
-              'Défaite : 40 % de l’XP normale pour les survivants (50 % à l’entraînement).',
+              'Victoire : toute l’escouade gagne la même XP, soldats tombés compris. Les pertes coûtent seulement des étoiles.',
+              'Défaite : 40 % de l’XP normale pour les survivants (50 % à l’entraînement), rien pour les soldats tombés.',
               'Niveau de campagne rejoué ou vague de survie : 50 % de l’XP d’un niveau équivalent.',
               `Entraînement : ${TRAINING_PER_SOLDIER} gratuits par soldat, puis payants selon son niveau.`,
             ),
