@@ -5,7 +5,7 @@ import { chooseLoss, type BattleReport } from '../game/combat';
 import { getState, mutate } from '../game/state';
 import { BOONS_BY_ID, pickBoon } from '../game/survival';
 import { ENEMY_LINES, TRAITS_BY_ID } from '../game/traits';
-import { pickUpgrade, recommendedUpgrade } from '../game/upgrades';
+import { pickUpgrade, recommendedUpgrade, SOLDIER_ROLES, soldierRole } from '../game/upgrades';
 import { BATTLE_SPEEDS, type BattleSpeed } from '../game/types';
 import { h, html } from './dom';
 import { spriteSvg } from './avatar';
@@ -410,7 +410,7 @@ function pendingPicks(ids: ReadonlySet<string>): HTMLElement | false {
               const u = UPGRADES_BY_ID[uid];
               return h(
                 'button',
-                { class: `pick-choice kind-${u.kind}${uid === best ? ' best' : ''}`, title: uid === best ? 'Conseillé pour son arme actuelle' : u.desc, onclick: () => { mutate((state) => pickUpgrade(state, s.id, uid)); draw(); } },
+                { class: `pick-choice kind-${u.kind}${uid === best ? ' best' : ''}`, title: uid === best ? `Conseillé pour son orientation : ${SOLDIER_ROLES[soldierRole(st, s)].label}` : u.desc, onclick: () => { mutate((state) => pickUpgrade(state, s.id, uid)); draw(); } },
                 h('b', null, `${UPGRADE_KINDS[u.kind].icon} ${u.name}`, uid === best && h('span', { class: 'tag tag-accent' }, 'Conseillé')),
                 h('small', null, u.desc),
               );

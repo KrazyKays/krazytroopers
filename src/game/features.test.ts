@@ -9,7 +9,7 @@ import { mulberry32 } from './rng';
 import { createSoldier, forgeWeapons, sortSquad, trainingCost } from './roster';
 import { createInitialState, parseSave } from './state';
 import { computeStats, powerScore, weaponForSoldier } from './stats';
-import { recommendedUpgrade, upgradeGains } from './upgrades';
+import { recommendedUpgrade, soldierRole, upgradeGains } from './upgrades';
 import { pickBoon } from './survival';
 import type { GameState } from './types';
 
@@ -290,6 +290,47 @@ describe('armes à bonus', () => {
     const rifleGains = upgradeGains(rifle, rifle.soldiers[0]);
     expect(rifleGains.get('vampire')).toBeGreaterThan(0);
     expect(rifleGains.get('berserk')).toBeGreaterThan(0);
+  });
+
+  describe('conseil selon l’orientation du soldat', () => {
+    const choose = (st: GameState, choices: string[]) => {
+      st.soldiers[0].upgradeChoices = choices;
+      return recommendedUpgrade(st, st.soldiers[0]);
+    };
+
+    it('oriente un porteur de bouclier vers les PV et l’armure', () => {
+      const st = squadState(1, 10, 'tower');
+      expect(soldierRole(st, st.soldiers[0])).toBe('tank');
+      expect(choose(st, ['glass', 'power', 'vitality'])).toBe('vitality');
+      expect(choose(st, ['glass', 'power', 'plating'])).toBe('plating');
+      expect(upgradeGains(st, st.soldiers[0]).get('glass')).toBeLessThan(0);
+    });
+
+    it('oriente un tireur vers les dégâts et le Canon de verre', () => {
+      const st = squadState(1, 10, 'rifle');
+      expect(soldierRole(st, st.soldiers[0])).toBe('shooter');
+      expect(choose(st, ['vitality', 'plating', 'glass'])).toBe('glass');
+      expect(choose(st, ['vitality', 'plating', 'power'])).toBe('power');
+    });
+
+    it('suit les choix du joueur : un épéiste qui cumule la défense devient un tank', () => {
+      const st = squadState(1, 10, 'sword');
+      const [s] = st.soldiers;
+      expect(soldierRole(st, s)).toBe('bruiser');
+      s.upgrades = ['vitality', 'plating'];
+      expect(soldierRole(st, s)).toBe('tank');
+    });
+
+    it('ne compte la position au front que si les positions sont débloquées', () => {
+      const st = squadState(1, 10, 'sword');
+      const [s] = st.soldiers;
+      s.upgrades = ['vitality'];
+      s.position = 'front';
+      st.campaignLevel = 0;
+      expect(soldierRole(st, s)).toBe('bruiser');
+      st.campaignLevel = 99;
+      expect(soldierRole(st, s)).toBe('tank');
+    });
   });
 
   describe('règles de soin', () => {

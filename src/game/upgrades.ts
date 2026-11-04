@@ -1,8 +1,9 @@
 import { LEGEND_UPGRADES, LEGION_PICKS, MAX_LEVEL, PICK_LEVELS, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADES, UPGRADES_BY_ID } from './data';
 import { isUnlocked } from './progress';
 import { shuffle, type Rng } from './rng';
-import { computeStats, powerScore, weaponForSoldier } from './stats';
-import type { GameState, Soldier, UpgradeDef, WeaponDef } from './types';
+import { activePosition } from './squad';
+import { computeStats, powerParts, weaponForSoldier } from './stats';
+import type { CombatStats, GameState, Soldier, UpgradeDef, WeaponDef } from './types';
 
 // ---------- Rangs ----------
 
@@ -93,14 +94,45 @@ export function statsWith(s: Soldier, weapon: WeaponDef, id: string) {
   return computeStats({ ...s, upgrades: [...s.upgrades, id] }, weapon);
 }
 
-/** Gain de puissance (en %) qu'apporterait chaque proposition, selon l'arme actuelle du soldat. */
-export function upgradeGains(st: GameState, s: Soldier): Map<string, number> {
+export type SoldierRole = 'tank' | 'shooter' | 'bruiser' | 'healer';
+
+/** Orientation d'un soldat : ce qu'on cherche à renforcer, et le poids de la résistance et de l'attaque dans le conseil. */
+export const SOLDIER_ROLES: Record<SoldierRole, { icon: string; label: string; focus: string; survival: number; offense: number }> = {
+  tank: { icon: '🛡️', label: 'Tank', focus: 'PV et armure', survival: 0.8, offense: 0.2 },
+  shooter: { icon: '🎯', label: 'DPS à distance', focus: 'dégâts, quitte à sacrifier des PV', survival: 0.2, offense: 0.8 },
+  bruiser: { icon: '⚔️', label: 'DPS au corps à corps', focus: 'dégâts, sans négliger la résistance', survival: 0.4, offense: 0.6 },
+  healer: { icon: '✚', label: 'Soigneur', focus: 'puissance et cadence des soins', survival: 0.25, offense: 0.75 },
+};
+
+/**
+ * Orientation actuelle du soldat : son arme d'abord, puis ce que le joueur en a fait. Un bouclier, le front
+ * et les améliorations de défense en font un tank ; des améliorations d'attaque l'en éloignent.
+ */
+export function soldierRole(st: GameState, s: Soldier): SoldierRole {
   const weapon = weaponForSoldier(s, st.weapons);
-  const base = powerScore(computeStats(s, weapon));
-  return new Map((s.upgradeChoices ?? []).map((id) => [id, powerScore(statsWith(s, weapon, id)) / base - 1]));
+  if (weapon.heal) return 'healer';
+  const kinds = s.upgrades.map((id) => UPGRADES_BY_ID[id]?.kind);
+  const lean = kinds.filter((k) => k === 'defense').length - kinds.filter((k) => k === 'attack').length;
+  const tank = (weapon.shape === 'shield' ? 2 : 0) + (activePosition(st, s) === 'front' ? 1 : 0) + lean;
+  if (tank >= 2) return 'tank';
+  return weapon.range > 60 ? 'shooter' : 'bruiser';
 }
 
-/** Proposition conseillée : celle qui augmente le plus la puissance du soldat avec son arme actuelle. */
+/** Note de puissance pondérée par l'orientation du soldat. */
+function roleScore(stats: CombatStats, role: SoldierRole): number {
+  const { survival, offense } = powerParts(stats);
+  return survival ** SOLDIER_ROLES[role].survival * offense ** SOLDIER_ROLES[role].offense;
+}
+
+/** Gain de puissance (en %) qu'apporterait chaque proposition, selon l'arme et l'orientation actuelles du soldat. */
+export function upgradeGains(st: GameState, s: Soldier): Map<string, number> {
+  const weapon = weaponForSoldier(s, st.weapons);
+  const role = soldierRole(st, s);
+  const base = roleScore(computeStats(s, weapon), role);
+  return new Map((s.upgradeChoices ?? []).map((id) => [id, roleScore(statsWith(s, weapon, id), role) / base - 1]));
+}
+
+/** Proposition conseillée : celle qui renforce le plus le soldat dans son orientation actuelle. */
 export function recommendedUpgrade(st: GameState, s: Soldier): string | null {
   let best: string | null = null;
   let bestGain = -Infinity;

@@ -1772,25 +1772,27 @@ input[type='checkbox'] {
   min-width: 240px;
 }
 
+.odds-easy { --odds: var(--good); }
+.odds-doable { --odds: color-mix(in srgb, var(--good) 55%, var(--warn)); }
+.odds-risky { --odds: var(--warn); }
+.odds-danger { --odds: var(--bad); }
+
 .odds-gauge {
+  display: flex;
+  flex-shrink: 0;
+  gap: 3px;
   width: 110px;
+}
+
+.odds-seg {
+  flex: 1;
   height: 10px;
-  overflow: hidden;
   background: var(--surface-3);
-  border-radius: 999px;
+  border-radius: 3px;
 }
 
-.odds-fill {
-  height: 100%;
-  border-radius: inherit;
-}
-
-.odds-good .odds-fill { background: var(--good); }
-.odds-warn .odds-fill { background: var(--warn); }
-.odds-bad .odds-fill { background: var(--bad); }
-.odds-good b { color: var(--good); }
-.odds-warn b { color: var(--warn); }
-.odds-bad b { color: var(--bad); }
+.odds-seg.on { background: var(--odds); }
+.odds-text b, .odds-label { color: var(--odds); }
 
 .odds-text {
   display: flex;

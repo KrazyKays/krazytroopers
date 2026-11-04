@@ -114,6 +114,30 @@ function sections(st: GameState): Section[] {
           ],
         },
         {
+          title: 'Que valent les verdicts Danger, Risqué, Faisable et Aisé ?',
+          body: [
+            p('Avant un combat, l’état-major simule plusieurs fois l’affrontement et donne un verdict volontairement prudent : en cas de doute, il retient le moins favorable.'),
+            list(
+              [b('Danger : '), 'la défaite est probable.'],
+              [b('Risqué : '), 'l’issue est incertaine.'],
+              [b('Faisable : '), 'bonnes chances, sans garantie.'],
+              [b('Aisé : '), 'aucune simulation perdue, mais une défaite reste possible.'],
+            ),
+          ],
+        },
+        {
+          title: 'Comment l’amélioration « Conseillée » est-elle choisie ?',
+          body: [
+            p('Elle dépend de l’orientation actuelle du soldat, indiquée au-dessus des propositions.'),
+            list(
+              [b('Tank : '), 'PV et armure. Il faut cumuler bouclier, position au front et améliorations de défense ; les améliorations d’attaque l’en éloignent.'],
+              [b('DPS à distance : '), 'dégâts, quitte à sacrifier des PV, comme avec Canon de verre.'],
+              [b('DPS au corps à corps : '), 'dégâts, sans négliger la résistance.'],
+              [b('Soigneur : '), 'puissance et cadence des soins.'],
+            ),
+          ],
+        },
+        {
           title: 'Quelles améliorations choisir pour un Fusil médical ?',
           body: [
             list(

@@ -86,13 +86,19 @@ export function dps(stats: CombatStats): number {
  * Un soigneur ne compte ni la Rage ni le vol de vie : ils n'agissent que sur ses tirs, pas sur ses soins.
  */
 export function powerScore(s: CombatStats): number {
+  const { survival, offense } = powerParts(s);
+  return Math.sqrt(survival * offense);
+}
+
+/** Les deux composantes de la note de puissance : résistance et efficacité offensive. */
+export function powerParts(s: CombatStats): { survival: number; offense: number } {
   const hit = s.damage * (1 + s.crit) * (s.berserk && !s.heal ? 1.15 : 1);
   const rate = hit / s.cooldown;
   const offense = rate * (1 + s.aoe / 80) * (s.ranged ? Math.pow(s.range / 150, 0.5) : 0.4 * Math.pow(s.speed / 70, 0.5));
   const ehp = (s.maxHp * (1 + s.armor / 100)) / (1 - s.dodge);
   const lifesteal = s.heal ? 0 : s.lifesteal;
   const survival = (ehp + 20 * s.regen * s.maxHp + 6 * lifesteal * rate) * (s.secondWind ? 1.25 : 1);
-  return Math.sqrt(Math.max(1, survival) * Math.max(0.1, offense));
+  return { survival: Math.max(1, survival), offense: Math.max(0.1, offense) };
 }
 
 export function addXp(s: Soldier, amount: number): number {

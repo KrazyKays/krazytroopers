@@ -247,6 +247,28 @@ export interface SimulationEstimate {
 
 export type EstimateLaunch = ({ ok: true } & SimulationEstimate) | { ok: false; error: string };
 
+export type OddsTier = 'danger' | 'risky' | 'doable' | 'easy';
+
+export const ODDS_TIERS: Record<OddsTier, { label: string; hint: string; rank: number }> = {
+  danger: { label: 'Danger', hint: 'Défaite probable', rank: 1 },
+  risky: { label: 'Risqué', hint: 'Issue incertaine', rank: 2 },
+  doable: { label: 'Faisable', hint: 'Bonnes chances, rien de garanti', rank: 3 },
+  easy: { label: 'Aisé', hint: 'Large marge, mais une défaite reste possible', rank: 4 },
+};
+
+/**
+ * Verdict volontairement prudent : on juge sur la borne basse de l'intervalle de Wilson à 95 %, pas sur le taux brut.
+ * Sur 50 combats simulés, un combat gagné à 97 % affiche 50 victoires sur 50 une fois sur cinq : seul un sans-faute
+ * mérite « Aisé », et même lui ne garantit rien, d'où l'absence de pourcentage à l'écran.
+ */
+export function oddsTier({ wins, runs }: Pick<SimulationEstimate, 'wins' | 'runs'>): OddsTier {
+  const z = 1.96;
+  const rate = wins / runs;
+  const spread = z * Math.sqrt((rate * (1 - rate)) / runs + (z * z) / (4 * runs * runs));
+  const floor = (rate + (z * z) / (2 * runs) - spread) / (1 + (z * z) / runs);
+  return floor >= 0.9 ? 'easy' : floor >= 0.65 ? 'doable' : floor >= 0.35 ? 'risky' : 'danger';
+}
+
 /** Joue `runs` simulations à graines différentes pour estimer les chances de l'escouade. */
 export function estimateSimulation(st: GameState, squadIds: string[], cfg: SimulationConfig, runs = ESTIMATE_RUNS, seed: number = randomSeed()): EstimateLaunch {
   const squad = resolveSquad(st, squadIds);

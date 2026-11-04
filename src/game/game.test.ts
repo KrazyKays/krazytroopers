@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { simulate } from './battle';
-import { DEFAULT_SIMULATION, estimateBattle, estimateSimulation, launchBattle, launchSimulation } from './combat';
+import { DEFAULT_SIMULATION, estimateBattle, estimateSimulation, launchBattle, launchSimulation, oddsTier } from './combat';
 import { LEGEND_UPGRADES, LEGION_PICKS, MAX_LEVEL, MAX_UPGRADES, PICK_LEVELS, PITY_LIMIT, PULL_COST, START_FREE_PULLS, START_GOLD, TRAINING_PER_SOLDIER, UPGRADE_CHOICES, UPGRADES, UPGRADES_BY_ID, WEAPON_PULL10_COST, WEAPON_PULL_COST, WEAPONS_BY_ID } from './data';
 import { buildCampaignEnemies, SIM_MAX_ENEMIES } from './enemies';
 import { mulberry32 } from './rng';
@@ -409,6 +409,27 @@ describe('simulation', () => {
     expect(easy.wins).toBe(10);
     expect(hard.wins).toBeLessThan(easy.wins);
     expect(JSON.stringify(st)).toBe(before);
+  });
+});
+
+describe('verdict prudent', () => {
+  const tier = (wins: number, runs = 50) => oddsTier({ wins, runs });
+
+  it('réserve « Aisé » à un sans-faute', () => {
+    expect(tier(50)).toBe('easy');
+    expect(tier(49)).toBe('doable');
+  });
+
+  it('place les seuils du côté de la prudence', () => {
+    expect(tier(40)).toBe('doable');
+    expect(tier(39)).toBe('risky');
+    expect(tier(25)).toBe('risky');
+    expect(tier(24)).toBe('danger');
+    expect(tier(0)).toBe('danger');
+  });
+
+  it('ne se fie pas à un petit échantillon', () => {
+    expect(tier(10, 10)).toBe('doable');
   });
 });
 

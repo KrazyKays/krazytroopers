@@ -13,6 +13,8 @@ import {
   nextPickLevel,
   pickUpgrade,
   recommendedUpgrade,
+  SOLDIER_ROLES,
+  soldierRole,
   rerollCost,
   rerollUpgrades,
   upgradeCap,
@@ -453,10 +455,11 @@ function upgradeBlock(st: GameState, s: Soldier, weapon: WeaponDef): HTMLElement
   if (s.picksLeft > 0 && s.upgradeChoices) {
     const gains = upgradeGains(st, s);
     const best = recommendedUpgrade(st, s);
+    const role = SOLDIER_ROLES[soldierRole(st, s)];
     const legend = new Set(LEGEND_UPGRADES.map((u) => u.id));
     const cost = rerollCost(s);
     block.append(
-      h('p', { class: 'muted small' }, s.picksLeft > 1 ? `Encore ${s.picksLeft} à choisir.` : 'Choisissez une amélioration.'),
+      h('p', { class: 'muted small' }, s.picksLeft > 1 ? `Encore ${s.picksLeft} à choisir.` : 'Choisissez une amélioration.', ` Orientation : ${role.icon} ${role.label}, conseils axés sur : ${role.focus}.`),
       h(
         'div',
         { class: 'choices' },
@@ -468,7 +471,7 @@ function upgradeBlock(st: GameState, s: Soldier, weapon: WeaponDef): HTMLElement
           return h(
             'button',
             { class: `choice kind-${u.kind}${legend.has(uid) ? ' choice-legend' : ''}${uid === best ? ' choice-best' : ''}`, onclick: () => mutate((state) => pickUpgrade(state, s.id, uid)) },
-            h('span', { class: 'choice-top' }, h('span', { class: 'choice-kind', title: kind.label }, kind.icon), uid === best && h('span', { class: 'tag tag-accent', title: `Selon l'arme actuelle : ${weapon.name}` }, 'Conseillé')),
+            h('span', { class: 'choice-top' }, h('span', { class: 'choice-kind', title: kind.label }, kind.icon), uid === best && h('span', { class: 'tag tag-accent', title: `Selon son orientation (${role.label}) et son arme (${weapon.name})` }, 'Conseillé')),
             h('b', null, u.name, maxRank(u) > 1 && h('span', { class: 'rank' }, ` rang ${rank}/${maxRank(u)}`)),
             h('span', { class: 'choice-desc' }, u.desc),
             gain > 0.0005 && h('small', { class: 'choice-gain' }, `Puissance +${fmt(gain * 100, 1)} %`),

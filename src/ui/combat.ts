@@ -11,6 +11,8 @@ import {
   DEFAULT_SIMULATION,
   estimateBattle,
   estimateSimulation,
+  ODDS_TIERS,
+  oddsTier,
   ESTIMATE_RUNS,
   launchBattle,
   launchFodder,
@@ -129,16 +131,13 @@ function currentBattleEstimate(st: GameState, req: BattleRequest): SimulationEst
 }
 
 function estimateLine(est: SimulationEstimate): HTMLElement {
-  const rate = est.wins / est.runs;
-  const tone = rate >= 0.8 ? 'good' : rate >= 0.5 ? 'warn' : 'bad';
-  // « Sûr » est une promesse : à 80 %, un combat sur cinq se perd encore
-  const verdict = rate >= 0.95 ? 'Combat sûr' : rate >= 0.8 ? 'Combat favorable' : rate >= 0.5 ? 'Combat risqué' : 'Très dangereux';
-  const deaths = est.avgDeaths;
+  const tier = oddsTier(est);
+  const { label, hint, rank } = ODDS_TIERS[tier];
   return h(
     'div',
-    { class: `odds odds-${tone}`, title: `Estimation sur ${est.runs} combats simulés avec cette escouade` },
-    h('div', { class: 'odds-gauge' }, h('div', { class: 'odds-fill', style: `width:${rate * 100}%` })),
-    h('div', { class: 'odds-text' }, h('b', null, `${verdict} · ${Math.round(rate * 100)} % de victoire`), h('small', null, deaths < 0.05 ? 'Aucune perte attendue' : `~${fmt(deaths, 1)} soldat${deaths >= 1.5 ? 's' : ''} perdu${deaths >= 1.5 ? 's' : ''} en moyenne (mort définitive)`)),
+    { class: `odds odds-${tier}`, title: 'Estimation prudente, à partir de combats simulés avec cette escouade. Aucun verdict ne garantit la victoire.' },
+    h('div', { class: 'odds-gauge' }, Object.values(ODDS_TIERS).map((t) => h('span', { class: `odds-seg${t.rank <= rank ? ' on' : ''}` }))),
+    h('div', { class: 'odds-text' }, h('b', null, label), h('small', null, hint)),
   );
 }
 
@@ -443,7 +442,7 @@ function simulationInfo(st: GameState): HTMLElement {
       est &&
         (dummy
           ? h('span', null, `Survie moyenne : ${est.avgDuration.toFixed(1)} s · ${pct(est.timeouts)} des combats tenus jusqu'au bout`)
-          : h('span', null, h('b', { class: est.wins >= est.runs / 2 ? 'good' : 'bad' }, `${pct(est.wins)} de victoires`), ` · ${pct(est.losses)} de défaites`, est.timeouts > 0 && ` · ${pct(est.timeouts)} hors temps`, ` · ${est.avgDuration.toFixed(1)} s en moyenne`)),
+          : h('span', { class: `odds-${oddsTier(est)}` }, h('b', { class: 'odds-label' }, ODDS_TIERS[oddsTier(est)].label), ` · ${ODDS_TIERS[oddsTier(est)].hint} · ${est.avgDuration.toFixed(1)} s en moyenne`)),
     ),
   );
 }
