@@ -34,7 +34,7 @@ function doPull(mode: SoldierMode): void {
     subtitle: firstEver ? `Cadeau de l'état-major : une recrue ${RARITIES[FIRST_PULL_RARITY].label} garantie pour démarrer.` : undefined,
     items: soldiers.map((s) => ({ rarity: s.rarity, front: soldierCard(st, s), onOpen: () => openSoldier(s.id) })),
     actions: (close) =>
-      [
+      getState().tutorial ? [h('button', { class: 'btn btn-primary', onclick: close }, 'Continuer')] : [
         h('button', { class: 'btn', onclick: close }, 'Continuer'),
         h('button', { class: 'btn', onclick: () => { close(); openSoldier(soldiers[0].id); } }, soldiers.length > 1 ? 'Améliorer les recrues' : 'Choisir son amélioration'),
         mode === 'free'

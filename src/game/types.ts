@@ -90,6 +90,8 @@ export interface GameState {
   towerFloor: number;
   /** Soldats tombés lors d'une défaite, parmi lesquels le joueur doit désigner celui qui ne reviendra pas. */
   pendingLoss: string[] | null;
+  /** Tutoriel obligatoire du début de partie ; null une fois terminé. */
+  tutorial: { introDone: boolean } | null;
 }
 
 export interface SurvivalRun {

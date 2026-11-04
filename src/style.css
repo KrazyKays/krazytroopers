@@ -4387,3 +4387,94 @@ input[type='checkbox'] {
   order: 2;
   text-align: center;
 }
+
+/* ---------- Tutoriel ---------- */
+
+.tuto {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.tuto-hole {
+  position: fixed;
+  border-radius: 12px;
+  box-shadow: 0 0 0 200vmax rgba(20, 18, 10, 0.62);
+}
+
+.tuto-hole.clear {
+  box-shadow: none;
+}
+
+.tuto-hole.on-target {
+  outline: 3px solid var(--accent);
+  animation: tuto-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes tuto-pulse {
+  50% {
+    outline-color: var(--star);
+    outline-offset: 3px;
+  }
+}
+
+.tuto-bubble {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: min(380px, calc(100vw - 24px));
+  padding: 0.9rem 1rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+}
+
+.tuto-bubble[hidden] {
+  display: none;
+}
+
+.tuto-title {
+  font-size: 1.05rem;
+}
+
+.tuto-text {
+  margin: 0;
+  line-height: 1.4;
+}
+
+.tuto-actions:empty {
+  display: none;
+}
+
+.tuto-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.tuto-nudge {
+  animation: tuto-nudge 0.35s ease;
+}
+
+@keyframes tuto-nudge {
+  25% {
+    transform: translateX(-6px);
+  }
+  75% {
+    transform: translateX(6px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tuto-hole.on-target,
+  .tuto-nudge {
+    animation: none;
+  }
+}

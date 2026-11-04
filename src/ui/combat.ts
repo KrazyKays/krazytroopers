@@ -251,6 +251,15 @@ function autoSelect(st: GameState): void {
   for (const s of sorted.slice(0, squadMax(st))) selected.add(s.id);
 }
 
+/** Engage d'office les meilleurs soldats si la sélection est vide. */
+export function ensureSquad(): void {
+  const st = getState();
+  pruneSelection(st);
+  if (selected.size > 0) return;
+  autoSelect(st);
+  if (selected.size > 0) refresh();
+}
+
 function toggleSoldier(st: GameState, s: Soldier): void {
   if (!eligible(s)) {
     toast(ineligibleReason(s), 'bad');
@@ -322,6 +331,8 @@ function launchFight(st: GameState, level: number): void {
     const fee = mode === 'training' ? trainingFee(after.soldiers.filter((s) => selected.has(s.id))) : 0;
     replay = { label: `${replayLabel}${feeLabel(fee)}`, run: launch };
   }
+  // Pendant le tutoriel, c'est lui qui décide de la suite après le bilan
+  if (after.tutorial) replay = undefined;
   // l'état est déjà enregistré : on rafraîchit simplement l'écran
   openBattle(title, res.units, res.result, res.report, () => refresh(), replay);
 }

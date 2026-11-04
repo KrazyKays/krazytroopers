@@ -25,7 +25,7 @@ import {
 import type { GameState, Rarity, Soldier, WeaponDef, WeaponItem } from '../game/types';
 import { h } from './dom';
 import { goTo } from './nav';
-import { confirmDialog, familyTag, fmt, fold, getSquadSort, itemDef, itemTags, openModal, traitTag, positionPicker, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
+import { type ModalHandle, confirmDialog, familyTag, fmt, fold, getSquadSort, itemDef, itemTags, openModal, traitTag, positionPicker, rarityTag, soldierSprite, squadToolbar, squadView, titleTags, toast, undoable, weaponDelta, weaponIcon, xpBar } from './components';
 
 
 const RARITY_PLURAL: Record<Rarity, string> = { common: 'communs', rare: 'rares', epic: 'épiques', legendary: 'légendaires', mythic: 'mythiques' };
@@ -258,11 +258,11 @@ function legionBlock(s: Soldier, removed: Set<string>): HTMLElement {
   );
 }
 
-export function openSoldier(id: string): void {
+export function openSoldier(id: string, onClose?: () => void): ModalHandle {
   const legionRemoved = new Set<string>();
   let current = id;
   let renaming = false;
-  openModal((close) => {
+  return openModal((close) => {
     const st = getState();
     const s = st.soldiers.find((x) => x.id === current);
     if (!s) {
@@ -416,7 +416,7 @@ export function openSoldier(id: string): void {
         ),
       ),
     );
-  });
+  }, onClose);
 }
 
 // ---------- Améliorations ----------

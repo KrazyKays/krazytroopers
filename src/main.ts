@@ -13,6 +13,7 @@ import { renderHome } from './ui/home';
 import { renderRecruit } from './ui/recruit';
 import { renderRoster } from './ui/roster';
 import { renderSettings } from './ui/settings';
+import { initTutorial } from './ui/tutorial';
 import { renderWiki } from './ui/wiki';
 import type { GameState } from './game/types';
 
@@ -80,7 +81,7 @@ function render(): void {
       );
     }),
   );
-  const guide = tab === 'home' ? null : renderGuide();
+  const guide = tab === 'home' || st.tutorial ? null : renderGuide();
   mainEl.replaceChildren(...(guide ? [guide] : []), def.render());
   refreshModals();
 }
@@ -88,3 +89,4 @@ function render(): void {
 subscribe(render);
 
 render();
+initTutorial();

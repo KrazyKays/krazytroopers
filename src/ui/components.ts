@@ -367,7 +367,7 @@ export function weaponName(defId: string): string {
   return WEAPONS_BY_ID[defId]?.name ?? defId;
 }
 
-interface ModalHandle {
+export interface ModalHandle {
   close: () => void;
   refresh: () => void;
 }

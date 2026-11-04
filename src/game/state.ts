@@ -32,9 +32,16 @@ export function createInitialState(): GameState {
     lootMeter: START_LOOT,
     towerFloor: 0,
     pendingLoss: null,
+    tutorial: { introDone: false },
   };
   for (const defId of START_WEAPONS) st.weapons.push({ uid: `w${st.nextId++}`, defId });
   return st;
+}
+
+// Une sauvegarde antérieure au tutoriel ne le déclenche que si la partie n'a pas réellement commencé.
+function tutorialOf(data: GameState): GameState['tutorial'] {
+  if (data.tutorial === undefined) return !data.totalPulls && data.soldiers.length === 0 && data.campaignLevel === 0 ? { introDone: false } : null;
+  return data.tutorial ? { introDone: !!data.tutorial.introDone } : null;
 }
 
 function isValidState(x: unknown): x is GameState {
@@ -82,6 +89,7 @@ export function parseSave(raw: string): GameState | null {
           lootMeter: typeof data.lootMeter === 'number' ? data.lootMeter : START_LOOT,
           towerFloor: typeof data.towerFloor === 'number' ? data.towerFloor : 0,
           pendingLoss: Array.isArray(data.pendingLoss) && data.pendingLoss.length > 0 ? data.pendingLoss : null,
+          tutorial: tutorialOf(data),
           survival: data.survival ? { ...data.survival, boons: data.survival.boons ?? [], choices: data.survival.choices ?? null, mercs: data.survival.mercs ?? [] } : null,
           // Sauvegardes antérieures au compteur global : on reprend les éliminations encore connues des soldats.
           stats: {
