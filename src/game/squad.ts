@@ -36,13 +36,15 @@ export interface PositionDef {
   name: string;
   icon: string;
   desc: string;
+  /** Profil de soldat auquel la position convient le mieux. */
+  fit: string;
 }
 
 export const POSITIONS: PositionDef[] = [
-  { id: 'free', name: 'Libre', icon: '🏃', desc: 'Avance à son rythme jusqu’à avoir l’ennemi à portée.' },
-  { id: 'front', name: 'En pointe', icon: '🗡️', desc: 'Part devant et fonce au contact en attaquant : attire les coups.' },
-  { id: 'cover', name: 'À couvert', icon: '🛡️', desc: 'Ne dépasse pas la première ligne tant qu’elle n’a pas engagé le combat.' },
-  { id: 'rear', name: 'À distance', icon: '🔭', desc: 'S’arrête au bout de sa portée et recule si l’ennemi s’approche.' },
+  { id: 'free', name: 'Libre', icon: '🏃', desc: 'Avance à son rythme jusqu’à avoir l’ennemi à portée.', fit: 'Polyvalent : convient à tous les soldats.' },
+  { id: 'front', name: 'En pointe', icon: '🚩', desc: 'Part devant et fonce au contact en attaquant : attire les coups.', fit: 'Idéal pour les boucliers et la mêlée.' },
+  { id: 'cover', name: 'À couvert', icon: '👣', desc: 'Marche dans les pas de la première ligne et ne la dépasse pas tant qu’elle n’a pas engagé le combat.', fit: 'Idéal pour les tireurs fragiles.' },
+  { id: 'rear', name: 'À distance', icon: '🔭', desc: 'S’arrête au bout de sa portée et recule si l’ennemi s’approche.', fit: 'Idéal pour la précision, les explosifs et les soigneurs.' },
 ];
 
 export const POSITIONS_BY_ID = Object.fromEntries(POSITIONS.map((p) => [p.id, p])) as Record<PositionId, PositionDef>;

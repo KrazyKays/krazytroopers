@@ -371,7 +371,7 @@ function sections(st: GameState): Section[] {
           title: 'Positions',
           body: [
             p(`Chaque soldat garde sa propre position, débloquée au niveau ${unlockLevel('positions')} de la campagne. Elle se règle à la préparation du combat ou sur sa fiche, et ne donne aucun bonus de statistiques.`),
-            list(...POSITIONS.map((t) => [b(`${t.icon} ${t.name} : `), t.desc])),
+            list(...POSITIONS.map((t) => [b(`${t.icon} ${t.name} : `), `${t.desc} ${t.fit}`])),
             p('La première ligne est formée par les porteurs de bouclier en position Libre et les soldats En pointe, ou à défaut par les soldats Libres, soigneurs exclus. Sans première ligne, un soldat À couvert avance librement. Une fois le combat engagé, il peut avancer pour avoir sa cible à portée : c’est indispensable pour une arme de mêlée.'),
           ],
         },

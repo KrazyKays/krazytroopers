@@ -63,14 +63,14 @@ export function positionPicker(s: Soldier): HTMLElement {
           'button',
           {
             class: `position${p.id === s.position ? ' active' : ''}`,
-            title: `${p.name} : ${p.desc}`,
+            title: `${p.name} : ${p.desc} ${p.fit}`,
             onclick: () => mutate((g) => { const t = g.soldiers.find((x) => x.id === s.id); if (t) t.position = p.id; }),
           },
           p.icon,
         ),
       ),
     ),
-    h('small', { class: 'muted' }, h('b', null, POSITIONS_BY_ID[s.position].name), ` : ${POSITIONS_BY_ID[s.position].desc}`),
+    h('small', { class: 'muted' }, h('b', null, POSITIONS_BY_ID[s.position].name), ` : ${POSITIONS_BY_ID[s.position].desc} `, h('i', null, POSITIONS_BY_ID[s.position].fit)),
   );
 }
 
